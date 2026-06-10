@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { fetchChecklistRecordsFromSupabase } from '../lib/db';
+import { fetchHistoricoInspecoesFromSupabase } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
-import { ChecklistRecord } from '../types';
+import { HistoricoInspecao } from '../types';
 import { 
   Search, 
   FileSpreadsheet,
@@ -17,7 +17,7 @@ export default function History() {
   const [filterEq, setFilterEq] = useState('Todos');
   const [filterStatus, setFilterStatus] = useState('Todos');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [records, setRecords] = useState<ChecklistRecord[]>([]);
+  const [records, setRecords] = useState<HistoricoInspecao[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Dynamic Infinite Scroll / Load More state for high performance
@@ -30,7 +30,7 @@ export default function History() {
     const loadAllRecords = async () => {
       setLoading(true);
       try {
-        const remoteRecords = await fetchChecklistRecordsFromSupabase();
+        const remoteRecords = await fetchHistoricoInspecoesFromSupabase();
         setRecords(remoteRecords);
       } catch (err) {
         console.error('Erro ao buscar registros do Supabase para o histórico:', err);
@@ -60,8 +60,12 @@ export default function History() {
       result = result.filter(r => 
         r.operador.toLowerCase().includes(q) ||
         r.equipamento.toLowerCase().includes(q) ||
-        r.item.toLowerCase().includes(q) ||
-        (r.observacao && r.observacao.toLowerCase().includes(q))
+        (r.patrimonio && r.patrimonio.toLowerCase().includes(q)) ||
+        (r.observacao_geral && r.observacao_geral.toLowerCase().includes(q)) ||
+        r.itens.some(item => 
+          item.itemLabel.toLowerCase().includes(q) || 
+          (item.observacao && item.observacao.toLowerCase().includes(q))
+        )
       );
     }
 
@@ -72,12 +76,12 @@ export default function History() {
 
     // Equipment filter
     if (filterEq !== 'Todos') {
-      result = result.filter(r => r.equipamento.includes(filterEq));
+      result = result.filter(r => r.equipamento.includes(filterEq) || r.patrimonio.includes(filterEq));
     }
 
     // Status filter
     if (filterStatus !== 'Todos') {
-      result = result.filter(r => r.status === filterStatus);
+      result = result.filter(r => r.status_geral === filterStatus);
     }
 
     // Sort Chronologically order
@@ -105,21 +109,27 @@ export default function History() {
   const handleExportCSV = () => {
     try {
       // Fast procedural conversion of filtered history into CSV string formats
-      const headers = ['Data', 'Hora', 'Operador', 'Equipamento', 'Atributo Inspecionado', 'Status', 'Observacao', 'Horimetro', 'Ligando', 'Barras_Bateria'];
+      const headers = ['Data', 'Hora', 'Operador', 'Equipamento', 'Patrimonio', 'Horimetro', 'Ligando', 'Barras_Bateria', 'Status Geral', 'Itens NOK', 'Observacoes Gerais'];
       const csvRows = [headers.join(',')];
 
       filteredRecords.forEach(r => {
+        const itensNokStr = r.itens
+          .filter(i => i.status === 'NOK')
+          .map(i => `${i.itemLabel}${i.observacao ? ` (${i.observacao})` : ''}`)
+          .join('; ');
+
         const row = [
           r.data.split('-').reverse().join('/'),
           r.hora,
           `"${r.operador.replace(/"/g, '""')}"`,
           `"${r.equipamento.replace(/"/g, '""')}"`,
-          `"${r.item.replace(/"/g, '""')}"`,
-          r.status,
-          `"${(r.observacao || '').replace(/"/g, '""')}"`,
+          `"${(r.patrimonio || '').replace(/"/g, '""')}"`,
           r.horimetro || '',
           r.ligando || '',
-          r.bateria_barras || ''
+          r.bateria_barras || '',
+          r.status_geral,
+          `"${itensNokStr.replace(/"/g, '""')}"`,
+          `"${(r.observacao_geral || '').replace(/"/g, '""')}"`
         ];
         csvRows.push(row.join(','));
       });
@@ -156,7 +166,7 @@ export default function History() {
             )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Logs completos de conformidade. Exiba e audite registros rapidamente.
+            Logs completos de conformidade. Exiba e audite checklists de forma unificada.
           </p>
         </div>
 
@@ -184,7 +194,7 @@ export default function History() {
             onChange={(e) => {
               setSearchTerm(e.target.value);
             }}
-            placeholder="Buscar por operador, marca da empilhadeira, item defeituoso..."
+            placeholder="Buscar por operador, equipamento, observação ou atributo de falha..."
             className="tkf-input pl-10 text-xs"
           />
         </div>
@@ -232,7 +242,7 @@ export default function History() {
 
           {/* Status selective */}
           <div className="space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Status Geral</span>
             <select
               value={filterStatus}
               onChange={(e) => {
@@ -242,7 +252,7 @@ export default function History() {
             >
               <option value="Todos">Todos os status</option>
               <option value="OK">OK (Conforme)</option>
-              <option value="NOK">NOK (Exceção/Avaria)</option>
+              <option value="NOK">NOK (Avaria relatada)</option>
             </select>
           </div>
 
@@ -270,7 +280,8 @@ export default function History() {
         <div className="sm:hidden space-y-3">
           {displayedRecords.length > 0 ? (
             displayedRecords.map((rec) => {
-              const isOk = rec.status === 'OK';
+              const isOk = rec.status_general === 'OK';
+              const itensNok = rec.itens.filter(i => i.status === 'NOK');
               return (
                 <div 
                   key={rec.id} 
@@ -284,7 +295,7 @@ export default function History() {
                         <Clock className="w-3 h-3 text-[#4364f7]" />
                         <span>{rec.data.split('-').reverse().join('/')} &bull; {rec.hora}</span>
                       </span>
-                      <h4 className="text-xs font-bold text-slate-200">{rec.item}</h4>
+                      <h4 className="text-xs font-bold text-slate-200">{rec.equipamento}</h4>
                     </div>
 
                     {/* Status Pill matching corporate standards */}
@@ -293,7 +304,7 @@ export default function History() {
                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
                         : 'bg-red-500/10 border-red-500/20 text-red-300'
                     }`}>
-                      {rec.status}
+                      {rec.status_general}
                     </span>
                   </div>
 
@@ -309,10 +320,25 @@ export default function History() {
                     </p>
                   </div>
 
-                  {/* Conditional Failure Observation */}
-                  {!isOk && rec.observacao && (
-                    <div className="bg-red-500/10 text-[10.5px] p-2.5 rounded border border-red-500/20 text-red-300 leading-relaxed">
-                      <span className="font-bold">Avaria relatada:</span> {rec.observacao}
+                  {/* Failure items summary */}
+                  {!isOk && itensNok.length > 0 && (
+                    <div className="bg-red-500/10 text-[10.5px] p-2.5 rounded border border-red-500/20 text-red-300 leading-relaxed space-y-1">
+                      <span className="font-bold block">Avarias relatadas:</span>
+                      <ul className="list-disc list-inside">
+                        {itensNok.map(item => (
+                          <li key={item.itemKey}>
+                            <span className="font-semibold">{item.itemLabel}</span>
+                            {item.observacao && `: ${item.observacao}`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* General observations */}
+                  {rec.observacao_geral && (
+                    <div className="bg-slate-800/50 text-[10.5px] p-2 rounded border border-white/5 text-slate-300">
+                      <span className="font-semibold">Obs Geral:</span> {rec.observacao_geral}
                     </div>
                   )}
                 </div>
@@ -332,16 +358,19 @@ export default function History() {
               <tr>
                 <th className="px-5 py-3.5">Data/Hora</th>
                 <th className="px-5 py-3.5">Equipamento</th>
-                <th className="px-5 py-3.5">Atributo</th>
-                <th className="px-5 py-3.5">Status</th>
+                <th className="px-5 py-3.5">Patrimônio</th>
+                <th className="px-5 py-3.5">Horímetro</th>
+                <th className="px-5 py-3.5">Status Geral</th>
                 <th className="px-5 py-3.5">Operador</th>
-                <th className="px-5 py-3.5">Observação Técnico-Operacional</th>
+                <th className="px-5 py-3.5">Itens NOK / Avarias</th>
+                <th className="px-5 py-3.5">Observações Gerais</th>
               </tr>
             </thead>
             <tbody className="text-xs text-slate-200 divide-y divide-white/5">
               {displayedRecords.length > 0 ? (
                 displayedRecords.map((rec) => {
-                  const isOk = rec.status === 'OK';
+                  const isOk = rec.status_general === 'OK';
+                  const itensNok = rec.itens.filter(i => i.status === 'NOK');
                   return (
                     <tr 
                       key={rec.id} 
@@ -356,8 +385,11 @@ export default function History() {
                       <td className="px-5 py-4 font-semibold whitespace-nowrap text-[#93c5fd]">
                         {rec.equipamento}
                       </td>
-                      <td className="px-5 py-4 font-semibold">
-                        {rec.item}
+                      <td className="px-5 py-4 whitespace-nowrap font-medium text-slate-300">
+                        {rec.patrimonio}
+                      </td>
+                      <td className="px-5 py-4 whitespace-nowrap font-medium text-slate-300">
+                        {rec.horimetro}h
                       </td>
                       <td className="px-5 py-4 whitespace-nowrap">
                         <span className={`text-[10px] p-1 px-3 rounded-full font-bold border inline-block leading-none text-center ${
@@ -365,7 +397,7 @@ export default function History() {
                             ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
                             : 'bg-red-500/10 border-red-500/20 text-red-300'
                         }`}>
-                          {rec.status}
+                          {rec.status_general}
                         </span>
                       </td>
                       <td className="px-5 py-4 text-slate-300 whitespace-nowrap font-medium">
@@ -373,19 +405,27 @@ export default function History() {
                       </td>
                       <td className="px-5 py-4">
                         {isOk ? (
-                          <span className="text-slate-500 italic">Sem defeitos</span>
+                          <span className="text-slate-500 italic">Nenhuma avaria</span>
                         ) : (
-                          <span className="text-red-300 font-semibold p-1 px-1.5 rounded bg-red-500/10 border border-red-500/15 block max-w-sm truncate" title={rec.observacao}>
-                            {rec.observacao}
-                          </span>
+                          <div className="space-y-1 max-w-xs">
+                            {itensNok.map(item => (
+                              <span key={item.itemKey} className="text-red-300 font-semibold p-0.5 px-1.5 rounded bg-red-500/10 border border-red-500/15 text-[10px] block truncate" title={`${item.itemLabel}: ${item.observacao}`}>
+                                {item.itemLabel}
+                                {item.observacao && `: ${item.observacao}`}
+                              </span>
+                            ))}
+                          </div>
                         )}
+                      </td>
+                      <td className="px-5 py-4 text-slate-400 italic max-w-xs truncate" title={rec.observacao_geral}>
+                        {rec.observacao_geral || '-'}
                       </td>
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
+                  <td colSpan={8} className="px-5 py-10 text-center text-slate-400">
                     Nenhum checklist de empilhadeira localizado para as seleções inseridas.
                   </td>
                 </tr>
@@ -398,7 +438,7 @@ export default function History() {
         <div className="bg-[#0e131f] border-t border-white/5 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs select-none">
           <p className="text-slate-400 text-center sm:text-left">
             Exibindo <span className="font-bold text-slate-100">{Math.min(displayedRecords.length, filteredRecords.length)}</span> de{' '}
-            <span className="font-semibold text-slate-100">{filteredRecords.length}</span> registros de auditoria
+            <span className="font-semibold text-slate-100">{filteredRecords.length}</span> checklists de auditoria
           </p>
 
           {filteredRecords.length > visibleCount && (

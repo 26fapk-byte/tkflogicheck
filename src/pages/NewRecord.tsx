@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LocalDb, CHECKLIST_ITEMS, generateUUID } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
-import { ChecklistRecord } from '../types';
+import { ChecklistRecord, HistoricoInspecao } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { 
   CheckCircle2, 
@@ -196,6 +196,32 @@ export default function NewRecord() {
       }
 
       LocalDb.saveRecords(newRecordsToAdd);
+
+      // Save unified inspection to the new historico_inspecoes table
+      const statusGeral = CHECKLIST_ITEMS.some(item => itemsStatus[item.key] === 'NOK') ? 'NOK' : 'OK';
+      const itemsList = CHECKLIST_ITEMS.map(item => ({
+        itemKey: item.key,
+        itemLabel: item.label,
+        status: itemsStatus[item.key],
+        observacao: itemsObservations[item.key].trim()
+      }));
+
+      const inspecao: HistoricoInspecao = {
+        id: generateUUID(),
+        created_at: timestamp,
+        data: currentDate,
+        hora: currentTime,
+        operador: operator,
+        equipamento: eqLabelOutput,
+        patrimonio: equipment,
+        horimetro: parsedHorimetro,
+        ligando: ligando,
+        bateria_barras: bateriaBarras,
+        status_geral: statusGeral,
+        itens: itemsList,
+        observacao_geral: generalObservation.trim()
+      };
+      LocalDb.saveHistoricoInspecao(inspecao);
 
       if ('vibrate' in navigator) {
         navigator.vibrate([100, 50, 100]);

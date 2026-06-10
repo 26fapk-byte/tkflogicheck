@@ -141,7 +141,43 @@ WITH CHECK (true);
 CREATE INDEX IF NOT EXISTS idx_equipamentos_patrimonio ON public.equipamentos (patrimonio);
 CREATE INDEX IF NOT EXISTS idx_equipamentos_ativo ON public.equipamentos (ativo);
 
--- 8. Instruções Adicionais de Conectividade
+-- 8. Tabela de Histórico Unificado de Inspeções (Checklist Padrão)
+CREATE TABLE IF NOT EXISTS public.historico_inspecoes (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    data DATE NOT NULL,
+    hora TIME NOT NULL,
+    operador VARCHAR(255) NOT NULL,
+    equipamento VARCHAR(255) NOT NULL,
+    patrimonio VARCHAR(120) NOT NULL,
+    horimetro NUMERIC(12,2) NOT NULL,
+    ligando VARCHAR(10) NOT NULL,
+    bateria_barras INT NOT NULL,
+    status_geral VARCHAR(10) CHECK (status_geral IN ('OK', 'NOK')) NOT NULL,
+    itens JSONB NOT NULL,
+    observacao_geral TEXT DEFAULT '' NOT NULL,
+    user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE SET NULL
+);
+
+ALTER TABLE public.historico_inspecoes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Permite insercoes para operadores autenticados" 
+ON public.historico_inspecoes FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Permite leitura geral para usuarios autenticados" 
+ON public.historico_inspecoes FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Permite delecao para gerentes e master" 
+ON public.historico_inspecoes FOR DELETE TO authenticated USING (
+  EXISTS (
+    SELECT 1 FROM public.perfis_usuarios
+    WHERE perfis_usuarios.id = auth.uid()
+    AND perfis_usuarios.nivel_acesso IN ('gerente', 'master')
+  )
+);
+
+-- 9. Instruções Adicionais de Conectividade
 -- Cole as seguintes variáveis no painel de segredos do Vercel ou no arquivo .env local:
 -- VITE_SUPABASE_URL=Sua_URL_do_Projeto_Supabase
 -- VITE_SUPABASE_ANON_KEY=Sua_Chave_Anonima_do_Projeto_Supabase
+

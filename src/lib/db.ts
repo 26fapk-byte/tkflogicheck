@@ -6,7 +6,8 @@ import {
   ChecklistItemMeta,
   InspectionStats,
   PreventiveChecklistSubmission,
-  BatteryRechargeRecord
+  BatteryRechargeRecord,
+  HistoricoInspecao
 } from '../types';
 
 // Safe UUID Generator for frontend PWA resilience
@@ -56,6 +57,7 @@ const KEY_RECORDS = `${STORE_PREFIX}records`;
 const KEY_SYNC_QUEUE = `${STORE_PREFIX}sync_queue`;
 const KEY_PREVENTIVE_CHECKLISTS = `${STORE_PREFIX}preventive_checklists`;
 const KEY_BATTERY_RECHARGES = `${STORE_PREFIX}battery_recharges`;
+const KEY_HISTORICO_INSPECOES = `${STORE_PREFIX}historico_inspecoes`;
 
 type EquipmentRow = {
   id: string;
@@ -138,8 +140,8 @@ export async function removeEquipment(id: string): Promise<boolean> {
 }
 
 type SyncQueueEntry = {
-  table: 'registros_checklist' | 'checklist_preventivo' | 'abastecimento_recarga_bateria';
-  payload: ChecklistRecord | PreventiveChecklistSubmission | BatteryRechargeRecord;
+  table: 'registros_checklist' | 'checklist_preventivo' | 'abastecimento_recarga_bateria' | 'historico_inspecoes';
+  payload: ChecklistRecord | PreventiveChecklistSubmission | BatteryRechargeRecord | HistoricoInspecao;
 };
 
 export class LocalDb {
@@ -153,6 +155,9 @@ export class LocalDb {
     if (!localStorage.getItem(KEY_BATTERY_RECHARGES)) {
       localStorage.setItem(KEY_BATTERY_RECHARGES, JSON.stringify([]));
     }
+    if (!localStorage.getItem(KEY_HISTORICO_INSPECOES)) {
+      localStorage.setItem(KEY_HISTORICO_INSPECOES, JSON.stringify([]));
+    }
   }
 
   static getRecords(): ChecklistRecord[] {
@@ -163,6 +168,23 @@ export class LocalDb {
     } catch {
       return [];
     }
+  }
+
+  static getHistoricoInspecoes(): HistoricoInspecao[] {
+    this.init();
+    try {
+      const raw = localStorage.getItem(KEY_HISTORICO_INSPECOES);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  static saveHistoricoInspecao(submission: HistoricoInspecao) {
+    const current = this.getHistoricoInspecoes();
+    localStorage.setItem(KEY_HISTORICO_INSPECOES, JSON.stringify([submission, ...current]));
+    this.queueForSync('historico_inspecoes', [submission]);
+    this.processSyncQueue();
   }
 
   static getOperators(): Operator[] {
@@ -294,6 +316,12 @@ export class LocalDb {
           };
         } else if (entry.table === 'abastecimento_recarga_bateria') {
           row = entry.payload as BatteryRechargeRecord;
+        } else if (entry.table === 'historico_inspecoes') {
+          const rec = entry.payload as HistoricoInspecao;
+          row = {
+            ...rec,
+            itens: JSON.stringify(rec.itens)
+          };
         }
 
         if (row) {
@@ -620,6 +648,32 @@ export async function fetchPreventiveChecklistsFromSupabase(): Promise<Preventiv
     }));
   } catch (err) {
     console.error('Erro de rede ao carregar checklists preventivos do Supabase:', err);
+    return [];
+  }
+}
+
+export async function fetchHistoricoInspecoesFromSupabase(): Promise<HistoricoInspecao[]> {
+  if (!isSupabaseConfigured || !supabase) {
+    return [];
+  }
+  try {
+    const { data, error } = await supabase
+      .from('historico_inspecoes')
+      .select('*')
+      .order('data', { ascending: false })
+      .order('hora', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar historico_inspecoes:', error);
+      return [];
+    }
+
+    return (data || []).map((row: any) => ({
+      ...row,
+      itens: typeof row.itens === 'string' ? JSON.parse(row.itens) : row.itens
+    }));
+  } catch (err) {
+    console.error('Erro de rede ao buscar historico_inspecoes:', err);
     return [];
   }
 }

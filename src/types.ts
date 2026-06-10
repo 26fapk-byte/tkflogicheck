@@ -87,3 +87,25 @@ export interface InspectionStats {
   failuresByAsset: { name: string; value: number }[];
   inspectionsByPeriod: { date: string; value: number }[];
 }
+
+export interface HistoricoInspecao {
+  id: string;
+  created_at: string;
+  data: string;
+  hora: string;
+  operador: string;
+  equipamento: string;
+  patrimonio: string;
+  horimetro: number;
+  ligando: 'OK' | 'NOK';
+  bateria_barras: number;
+  status_geral: 'OK' | 'NOK';
+  itens: {
+    itemKey: string;
+    itemLabel: string;
+    status: 'OK' | 'NOK';
+    observacao: string;
+  }[];
+  observacao_geral: string;
+}
+
