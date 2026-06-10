@@ -16,4 +16,51 @@ export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// Keep silent when Supabase env vars are not configured.
+// Expose connection globally on window for external buttons/console access
+if (typeof window !== 'undefined' && supabase) {
+  (window as any).supabase = supabase;
+}
+
+// Global helper to save checklist records directly to Supabase history
+export async function salvarNoHistorico(nomeOperador: string, nomeEquipamento: string): Promise<boolean> {
+  if (!supabase) {
+    console.error('Erro: Supabase não está configurado.');
+    return false;
+  }
+  
+  const agora = new Date();
+  
+  // Formata a data para YYYY-MM-DD
+  const dataAtual = agora.toISOString().split('T')[0]; 
+  
+  // Formata a hora para HH:MM:SS
+  const horaAtual = agora.toTimeString().split(' ')[0]; 
+
+  // Insere no banco com campos padrão necessários para satisfazer constraints NOT NULL
+  const { error } = await supabase
+    .from('registros_checklist')
+    .insert([
+      { 
+        data: dataAtual, 
+        hora: horaAtual, 
+        operador: nomeOperador, 
+        equipamento: nomeEquipamento,
+        item: 'Geral', // Valor padrão obrigatório (NOT NULL)
+        status: 'OK'   // Valor padrão obrigatório (NOT NULL)
+      },
+    ]);
+
+  if (error) {
+    console.error('Erro ao salvar no histórico:', error.message);
+    return false;
+  }
+
+  console.log('Registro salvo com sucesso no histórico!');
+  return true;
+}
+
+// Expose globally on window
+if (typeof window !== 'undefined') {
+  (window as any).salvarNoHistorico = salvarNoHistorico;
+}
+
