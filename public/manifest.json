@@ -1,0 +1,24 @@
+{
+  "short_name": "TKF LogiCheck",
+  "name": "TKF LogiCheck - Checklist Operacional",
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "display": "standalone",
+  "orientation": "portrait",
+  "description": "PWA enterprise para inspeção digital, checklist operacional e auditoria de ativos logísticos."
+}
