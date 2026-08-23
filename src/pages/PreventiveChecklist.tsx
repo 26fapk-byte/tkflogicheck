@@ -1,8 +1,9 @@
-import React, { useMemo, useState, useEffect } from 'react';
-import { AlertTriangle, Battery, ClipboardCheck, Gauge, Truck } from 'lucide-react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { AlertTriangle, Battery, ClipboardCheck, Gauge, Truck, Camera, X } from 'lucide-react';
 import { LocalDb, CHECKLIST_ITEMS, generateUUID } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
 import { useAuth } from '../context/AuthContext';
+import { uploadFotoNok } from '../lib/supabaseStorage';
 import { PreventiveChecklistSubmission, Equipment } from '../types';
 import StatusToggle from '../components/StatusToggle';
 import SignatureField from '../components/SignatureField';
@@ -18,6 +19,9 @@ export default function PreventiveChecklist() {
   const [generalNotes, setGeneralNotes] = useState('');
   const [signatureName, setSignatureName] = useState(user?.name || '');
   const [signatureAccepted, setSignatureAccepted] = useState(false);
+  const [itemsFotos, setItemsFotos] = useState<Record<string, File | null>>({});
+  const [itemsFotoPreview, setItemsFotoPreview] = useState<Record<string, string | null>>({});
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [itemsState, setItemsState] = useState<Record<string, { status: 'OK' | 'NOK'; observacao: string }>>(() => {
     const state: Record<string, { status: 'OK' | 'NOK'; observacao: string }> = {};
@@ -43,6 +47,14 @@ export default function PreventiveChecklist() {
     const pending = CHECKLIST_ITEMS.find((item) => itemsState[item.key].status === 'NOK' && !itemsState[item.key].observacao.trim());
     if (pending) return showToast(`Descreva o item NOK: ${pending.label}.`, 'error');
 
+    // Upload das fotos de itens NOK (opcional, best-effort)
+    const fotosUrls: Record<string, string | null> = {};
+    for (const item of CHECKLIST_ITEMS) {
+      if (itemsState[item.key].status === 'NOK' && itemsFotos[item.key]) {
+        fotosUrls[item.key] = await uploadFotoNok(itemsFotos[item.key]!, 'preventivo');
+      }
+    }
+
     const selectedEq = equipments.find((eq) => eq.patrimonio === equipment);
     const now = new Date();
 
@@ -64,7 +76,8 @@ export default function PreventiveChecklist() {
         itemKey: item.key,
         itemLabel: item.label,
         status: itemsState[item.key].status,
-        observacao: itemsState[item.key].observacao.trim()
+        observacao: itemsState[item.key].observacao.trim(),
+        foto_url: fotosUrls[item.key] || undefined
       }))
     };
 
@@ -75,6 +88,8 @@ export default function PreventiveChecklist() {
     setBatteryBars(4);
     setGeneralNotes('');
     setSignatureAccepted(false);
+    setItemsFotos({});
+    setItemsFotoPreview({});
   };
 
 
@@ -154,13 +169,54 @@ export default function PreventiveChecklist() {
                 </div>
               </div>
               {itemsState[item.key].status === 'NOK' && (
-                <textarea
-                  value={itemsState[item.key].observacao}
-                  onChange={(event) => setItemsState((prev) => ({ ...prev, [item.key]: { ...prev[item.key], observacao: event.target.value } }))}
-                  rows={2}
-                  className="w-full rounded-xl border border-amber-500/35 bg-[#0e131f] px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
-                  placeholder="Descreva a não conformidade encontrada..."
-                />
+                <>
+                  <textarea
+                    value={itemsState[item.key].observacao}
+                    onChange={(event) => setItemsState((prev) => ({ ...prev, [item.key]: { ...prev[item.key], observacao: event.target.value } }))}
+                    rows={2}
+                    className="w-full rounded-xl border border-amber-500/35 bg-[#0e131f] px-3 py-2 text-xs text-white focus:border-amber-500 outline-none"
+                    placeholder="Descreva a não conformidade encontrada..."
+                  />
+
+                  <div className="space-y-2">
+                    {!itemsFotoPreview[item.key] ? (
+                      <div
+                        onClick={() => fileInputRefs.current[item.key]?.click()}
+                        className="flex items-center gap-2 rounded-lg border border-dashed border-red-500/30 bg-red-500/5 px-3 py-2 cursor-pointer hover:border-red-500/60 transition-all"
+                      >
+                        <Camera className="h-4 w-4 text-red-400/60" />
+                        <span className="text-xs text-red-400/70">Anexar foto (opcional)</span>
+                      </div>
+                    ) : (
+                      <div className="relative rounded-lg overflow-hidden border border-red-500/30">
+                        <img src={itemsFotoPreview[item.key]!} alt="Preview" className="w-full max-h-32 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setItemsFotos(prev => ({ ...prev, [item.key]: null }));
+                            setItemsFotoPreview(prev => ({ ...prev, [item.key]: null }));
+                          }}
+                          className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
+                    <input
+                      ref={el => { fileInputRefs.current[item.key] = el; }}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setItemsFotos(prev => ({ ...prev, [item.key]: file }));
+                        setItemsFotoPreview(prev => ({ ...prev, [item.key]: URL.createObjectURL(file) }));
+                      }}
+                    />
+                  </div>
+                </>
               )}
             </article>
           ))}

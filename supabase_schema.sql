@@ -176,7 +176,42 @@ ON public.historico_inspecoes FOR DELETE TO authenticated USING (
   )
 );
 
--- 9. Instruções Adicionais de Conectividade
+-- 9. Tabela de Baterias (frota de baterias intercambiáveis)
+CREATE TABLE IF NOT EXISTS public.baterias (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    numero INT NOT NULL UNIQUE,
+    status VARCHAR(20) DEFAULT 'Ativa' NOT NULL CHECK (status IN ('Ativa', 'Inativa', 'Manutencao')),
+    user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE SET NULL
+);
+
+ALTER TABLE public.baterias ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "baterias_select_auth"
+ON public.baterias
+FOR SELECT TO authenticated
+USING (true);
+
+CREATE POLICY "baterias_insert_auth"
+ON public.baterias
+FOR INSERT TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "baterias_update_auth"
+ON public.baterias
+FOR UPDATE TO authenticated
+USING (true)
+WITH CHECK (true);
+
+CREATE INDEX IF NOT EXISTS idx_baterias_numero_status ON public.baterias (numero, status);
+
+-- Vínculo opcional da bateria utilizada no ciclo de recarga
+ALTER TABLE public.abastecimento_recarga_bateria
+  ADD COLUMN IF NOT EXISTS bateria_id UUID REFERENCES public.baterias(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_abastecimento_bateria ON public.abastecimento_recarga_bateria (bateria_id);
+
+-- 10. Instruções Adicionais de Conectividade
 -- Cole as seguintes variáveis no painel de segredos do Vercel ou no arquivo .env local:
 -- VITE_SUPABASE_URL=Sua_URL_do_Projeto_Supabase
 -- VITE_SUPABASE_ANON_KEY=Sua_Chave_Anonima_do_Projeto_Supabase

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { LocalDb, createEquipment, removeEquipment, generateUUID } from '../lib/db';
-import { ChecklistRecord } from '../types';
+import { LocalDb, createEquipment, removeEquipment, generateUUID, fetchHistoricoInspecoesFromSupabase } from '../lib/db';
+import { ChecklistRecord, HistoricoInspecao } from '../types';
 import { useEquipments } from '../hooks/useEquipments';
 import {
   Truck,
@@ -17,9 +17,34 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+function historicoToRecords(inspecoes: HistoricoInspecao[]): ChecklistRecord[] {
+  const records: ChecklistRecord[] = [];
+  inspecoes.forEach((insp) => {
+    insp.itens.forEach((item) => {
+      records.push({
+        id: `${insp.id}_${item.itemKey}`,
+        created_at: insp.created_at,
+        data: insp.data,
+        hora: insp.hora,
+        operador: insp.operador,
+        equipamento: insp.equipamento,
+        item: item.itemLabel,
+        status: item.status,
+        observacao: item.observacao,
+        patrimonio: insp.patrimonio,
+        horimetro: insp.horimetro,
+        ligando: insp.ligando,
+        bateria_barras: insp.bateria_barras
+      });
+    });
+  });
+  return records;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [records, setRecords] = useState<ChecklistRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const { equipments, reload: reloadEquipments } = useEquipments();
   const [selectedMonth, setSelectedMonth] = useState('Todos');
   const [selectedEq, setSelectedEq] = useState('Todos');
@@ -30,20 +55,24 @@ export default function Dashboard() {
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const loadData = async () => {
-    setRecords(LocalDb.getRecords());
+    try {
+      const inspecoes = await fetchHistoricoInspecoesFromSupabase();
+      if (inspecoes.length > 0) {
+        setRecords(historicoToRecords(inspecoes));
+      } else {
+        setRecords(LocalDb.getRecords());
+      }
+    } catch {
+      setRecords(LocalDb.getRecords());
+    } finally {
+      setIsLoading(false);
+    }
     reloadEquipments();
   };
 
   useEffect(() => {
     loadData();
   }, []);
-
-  // Permission check: Only gerente/master can access this dashboard
-  useEffect(() => {
-    if (user && user.role === 'operador') {
-      window.location.href = '/';
-    }
-  }, [user]);
 
   const filteredRecords = useMemo(() => {
     let result = [...records];
@@ -90,7 +119,7 @@ export default function Dashboard() {
         ...equipment,
         lastInspection: latest ? `${latest.data.split('-').reverse().join('/')} ${latest.hora}` : 'Sem registro',
         lastOperator: latest?.operador ?? 'Sem operador',
-        status: latest ? (failedItems.length > 0 ? 'NOK' : 'OK') : 'Sem inspe��o',
+        status: latest ? (failedItems.length > 0 ? 'NOK' : 'OK') : 'Sem inspeção',
         failedItems
       };
     });
@@ -128,16 +157,16 @@ export default function Dashboard() {
 
   const handleDeleteRecord = (id: string) => {
     if (!user || (user.role !== 'gerente' && user.role !== 'master')) {
-      setNotification({ message: 'Voc� n�o tem permiss�o para excluir registros.', type: 'error' });
+      setNotification({ message: 'Você não tem permissão para excluir registros.', type: 'error' });
       return;
     }
 
     const success = LocalDb.deleteRecord(id);
     if (success) {
-      setNotification({ message: 'Registro exclu�do com sucesso.', type: 'success' });
+      setNotification({ message: 'Registro excluído com sucesso.', type: 'success' });
       loadData();
     } else {
-      setNotification({ message: 'N�o foi poss�vel excluir o registro. Tente novamente.', type: 'error' });
+      setNotification({ message: 'Não foi possível excluir o registro. Tente novamente.', type: 'error' });
     }
   };
 
@@ -188,6 +217,12 @@ export default function Dashboard() {
         </div>
       )}
 
+      {isLoading && (
+        <div className="flex items-center justify-center rounded-2xl border border-[#E2E8F0] bg-white p-10 shadow-sm">
+          <p className="text-xs font-bold uppercase tracking-widest text-[#1e3a8a]">Carregando dados...</p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="tkf-title">Painel Operacional Enterprise</h1>
@@ -230,7 +265,7 @@ export default function Dashboard() {
         <article className="tkf-card p-5">
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#64748B]">Inspeções totais</p>
           <h2 className="mt-3 text-3xl font-bold text-[#0F172A]">{totalInspections}</h2>
-          <p className="mt-2 text-xs text-[#475569]">Contagem de checklists �nicos enviados hoje e no hist�rico.</p>
+          <p className="mt-2 text-xs text-[#475569]">Contagem de checklists únicos enviados hoje e no histórico.</p>
         </article>
 
         <article className="tkf-card p-5">
@@ -256,12 +291,12 @@ export default function Dashboard() {
           <h2 className="mt-3 text-3xl font-bold text-[#0F172A]">{totalNok}</h2>
           <div className="mt-2 flex items-center gap-2 text-xs text-[#881337]">
             <AlertCircle className="w-4 h-4" />
-            <span>Registros com n�o conformidades</span>
+            <span>Registros com não conformidades</span>
           </div>
         </article>
 
         <article className="rounded-3xl border border-[#E2E8F0] bg-white p-5 shadow-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#64748B]">M�quinas ativas</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[#64748B]">Máquinas ativas</p>
           <h2 className="mt-3 text-3xl font-bold text-[#0F172A]">{equipments.length}</h2>
           <div className="mt-2 flex items-center gap-2 text-xs text-[#1D4ED8]">
             <Truck className="w-4 h-4" />
@@ -284,13 +319,13 @@ export default function Dashboard() {
 
           <div className="mt-5 space-y-3">
             {operatorRanking.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">Ainda n�o h� registros suficientes.</div>
+              <div className="rounded-2xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-4 text-sm text-[#64748B]">Ainda não há registros suficientes.</div>
             ) : (
               operatorRanking.map((entry, index) => (
               <div key={entry.operador} className="flex items-center justify-between rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] p-4">
                   <div>
                     <p className="text-sm font-semibold text-[#0F172A]">{entry.operador}</p>
-                    <p className="text-[11px] text-[#64748B]">A��es registradas</p>
+                    <p className="text-[11px] text-[#64748B]">Ações registradas</p>
                   </div>
                   <div className="rounded-full bg-[#E2E8F8] px-3 py-1 text-sm font-bold text-[#0F172A]">{entry.count}</div>
                 </div>
@@ -308,7 +343,7 @@ export default function Dashboard() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-semibold text-[#0F172A]">{equipment.nome}</p>
-                    <p className="text-[11px] text-[#64748B]">{equipment.patrimonio} � {equipment.tipo}</p>
+                    <p className="text-[11px] text-[#64748B]">{equipment.patrimonio} · {equipment.tipo}</p>
                   </div>
                   <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${equipment.status === 'OK' ? 'bg-[#E6F7F8] text-[#006970]' : equipment.status === 'NOK' ? 'bg-[#FEF2F2] text-[#981B1B]' : 'bg-[#E2E8F0] text-[#475569]'}`}>
                     {equipment.status}
@@ -353,7 +388,7 @@ export default function Dashboard() {
                   <th className="px-3 py-3">Item</th>
                   <th className="px-3 py-3">Status</th>
                   <th className="px-3 py-3">Operador</th>
-                  <th className="px-3 py-3">A��o</th>
+                  <th className="px-3 py-3">Ação</th>
                 </tr>
               </thead>
               <tbody>
@@ -379,7 +414,7 @@ export default function Dashboard() {
                           Excluir
                         </button>
                       ) : (
-                        <span className="text-[11px] text-[#6C797B]">Sem permiss�o</span>
+                        <span className="text-[11px] text-[#6C797B]">Sem permissão</span>
                       )}
                     </td>
                   </tr>
@@ -388,7 +423,7 @@ export default function Dashboard() {
             </table>
           </div>
           {filteredRecords.length > 15 && (
-            <div className="mt-4 text-xs text-[#64748B]">Apenas os 15 registros mais recentes s�o exibidos aqui para performance.</div>
+            <div className="mt-4 text-xs text-[#64748B]">Apenas os 15 registros mais recentes são exibidos aqui para performance.</div>
           )}
         </article>
 
@@ -412,7 +447,7 @@ export default function Dashboard() {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Patrim�nio</label>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Patrimônio</label>
               <input
                 value={equipmentPatrimonio}
                 onChange={(event) => setEquipmentPatrimonio(event.target.value)}
@@ -449,7 +484,7 @@ export default function Dashboard() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-[#0F172A]">{equipment.nome}</p>
-                        <p className="text-[11px] text-[#64748B]">{equipment.patrimonio} � {equipment.tipo}</p>
+                        <p className="text-[11px] text-[#64748B]">{equipment.patrimonio} · {equipment.tipo}</p>
                       </div>
                       <button
                         type="button"

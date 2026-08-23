@@ -1,19 +1,22 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { LocalDb, CHECKLIST_ITEMS, generateUUID } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
 import { ChecklistRecord, HistoricoInspecao } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { 
-  CheckCircle2, 
-  Save, 
-  Sparkles, 
-  Clock, 
-  Calendar, 
-  Truck, 
-  User, 
-  Battery, 
-  Gauge, 
-  Power 
+import { uploadFotoNok } from '../lib/supabaseStorage';
+import {
+  CheckCircle2,
+  Save,
+  Sparkles,
+  Clock,
+  Calendar,
+  Truck,
+  User,
+  Battery,
+  Gauge,
+  Power,
+  Camera,
+  X
 } from 'lucide-react';
 import StatusToggle from '../components/StatusToggle';
 import { useToast } from '../hooks/useToast';
@@ -73,6 +76,9 @@ export default function NewRecord() {
 
   const { toast, showToast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [itemsFotos, setItemsFotos] = useState<Record<string, File | null>>({});
+  const [itemsFotoPreview, setItemsFotoPreview] = useState<Record<string, string | null>>({});
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   // Auto-set operator to logged in user if they are an operator
   useEffect(() => {
@@ -152,9 +158,17 @@ export default function NewRecord() {
 
     try {
       const selectedEquipmentMeta = equipments.find(eq => eq.patrimonio === equipment);
-      const eqLabelOutput = selectedEquipmentMeta 
+      const eqLabelOutput = selectedEquipmentMeta
         ? `${selectedEquipmentMeta.nome} (${selectedEquipmentMeta.patrimonio})`
         : equipment;
+
+      // Upload das fotos de itens NOK (opcional, best-effort)
+      const fotosUrls: Record<string, string | null> = {};
+      for (const item of CHECKLIST_ITEMS) {
+        if (itemsStatus[item.key] === 'NOK' && itemsFotos[item.key]) {
+          fotosUrls[item.key] = await uploadFotoNok(itemsFotos[item.key]!, 'inspecao');
+        }
+      }
 
       const newRecordsToAdd: ChecklistRecord[] = [];
       const timestamp = new Date().toISOString();
@@ -203,7 +217,8 @@ export default function NewRecord() {
         itemKey: item.key,
         itemLabel: item.label,
         status: itemsStatus[item.key],
-        observacao: itemsObservations[item.key].trim()
+        observacao: itemsObservations[item.key].trim(),
+        foto_url: fotosUrls[item.key] || undefined
       }));
 
       const inspecao: HistoricoInspecao = {
@@ -243,6 +258,8 @@ export default function NewRecord() {
       });
       setItemsStatus(resetStatus);
       setItemsObservations(resetObs);
+      setItemsFotos({});
+      setItemsFotoPreview({});
 
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -463,6 +480,45 @@ export default function NewRecord() {
                         placeholder="Ex: Mangueira apresentando vazamento de óleo ou buzina sem sinal sonoro..."
                         className="w-full text-xs p-2.5 bg-[#0e131f] border border-red-500/20 rounded focus:outline-none focus:border-red-400 text-white leading-relaxed"
                       />
+
+                      <div className="space-y-2 mt-2">
+                        {!itemsFotoPreview[item.key] ? (
+                          <div
+                            onClick={() => fileInputRefs.current[item.key]?.click()}
+                            className="flex items-center gap-2 rounded-lg border border-dashed border-red-500/30 bg-red-500/5 px-3 py-2 cursor-pointer hover:border-red-500/60 transition-all"
+                          >
+                            <Camera className="h-4 w-4 text-red-400/60" />
+                            <span className="text-xs text-red-400/70">Anexar foto (opcional)</span>
+                          </div>
+                        ) : (
+                          <div className="relative rounded-lg overflow-hidden border border-red-500/30">
+                            <img src={itemsFotoPreview[item.key]!} alt="Preview" className="w-full max-h-32 object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setItemsFotos(prev => ({ ...prev, [item.key]: null }));
+                                setItemsFotoPreview(prev => ({ ...prev, [item.key]: null }));
+                              }}
+                              className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                        <input
+                          ref={el => { fileInputRefs.current[item.key] = el; }}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            setItemsFotos(prev => ({ ...prev, [item.key]: file }));
+                            setItemsFotoPreview(prev => ({ ...prev, [item.key]: URL.createObjectURL(file) }));
+                          }}
+                        />
+                      </div>
                     </div>
                   )}
 

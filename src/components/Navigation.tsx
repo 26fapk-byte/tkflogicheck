@@ -192,34 +192,6 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
       {/* Primary Mobile Touchbar: Fixed to screen bottom, minimal, large tap points of 48px */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 h-16 border-t border-slate-200 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur">
         <div className="flex h-full items-center overflow-x-auto px-1">
-        {(user?.role === 'gerente' || user?.role === 'master') && (
-          <button
-            onClick={() => setTab('dashboard')}
-            className={`min-w-[70px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${currentTab === 'dashboard'
-                ? 'text-[#1E3A8A] font-semibold'
-                : 'text-[#6C797B] hover:text-[#1E3A8A]'
-              }`}
-          >
-            <div className={`p-1 rounded-md transition-colors ${currentTab === 'dashboard' ? 'bg-[#EBF5FF]' : ''}`}>
-              <LayoutDashboard className="w-5 h-5" />
-            </div>
-            <span className="text-[10px] tracking-wide">Dashboard</span>
-          </button>
-        )}
-
-        <button
-          onClick={() => setTab('preventive-checklist')}
-          className={`min-w-[76px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${currentTab === 'preventive-checklist'
-              ? 'text-[#1E3A8A] font-semibold'
-              : 'text-[#6C797B] hover:text-[#1E3A8A]'
-            }`}
-        >
-          <div className={`p-1 rounded-md transition-colors ${currentTab === 'preventive-checklist' ? 'bg-[#EBF5FF]' : ''}`}>
-            <ClipboardCheck className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] tracking-wide">Preventivo</span>
-        </button>
-
         <button
           onClick={() => setTab('new-record')}
           className={`min-w-[76px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${currentTab === 'new-record'
@@ -230,7 +202,7 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
           <div className={`p-1 rounded-md transition-colors ${currentTab === 'new-record' ? 'bg-[#EBF5FF]' : ''}`}>
             <FilePlus2 className="w-5 h-5" />
           </div>
-          <span className="text-[10px] tracking-wide">Novo Checklist</span>
+          <span className="text-[10px] tracking-wide">Check Diário</span>
         </button>
 
         <button
@@ -247,6 +219,19 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
         </button>
 
         <button
+          onClick={() => setTab('preventive-checklist')}
+          className={`min-w-[76px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${currentTab === 'preventive-checklist'
+              ? 'text-[#1E3A8A] font-semibold'
+              : 'text-[#6C797B] hover:text-[#1E3A8A]'
+            }`}
+        >
+          <div className={`p-1 rounded-md transition-colors ${currentTab === 'preventive-checklist' ? 'bg-[#EBF5FF]' : ''}`}>
+            <ClipboardCheck className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] tracking-wide">Preventivo</span>
+        </button>
+
+        <button
           onClick={() => setTab('history')}
           className={`min-w-[70px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${currentTab === 'history'
               ? 'text-[#1E3A8A] font-semibold'
@@ -257,6 +242,19 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
             <ClipboardList className="w-5 h-5" />
           </div>
           <span className="text-[10px] tracking-wide">Histórico</span>
+        </button>
+
+        <button
+          onClick={() => setTab('dashboard')}
+          className={`min-w-[70px] h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${currentTab === 'dashboard'
+              ? 'text-[#1E3A8A] font-semibold'
+              : 'text-[#6C797B] hover:text-[#1E3A8A]'
+            }`}
+        >
+          <div className={`p-1 rounded-md transition-colors ${currentTab === 'dashboard' ? 'bg-[#EBF5FF]' : ''}`}>
+            <LayoutDashboard className="w-5 h-5" />
+          </div>
+          <span className="text-[10px] tracking-wide">Dashboard</span>
         </button>
 
         {(user?.role === 'gerente' || user?.role === 'master') && (

@@ -19,6 +19,7 @@ export interface PreventiveChecklistItemResult {
   itemLabel: string;
   status: 'OK' | 'NOK';
   observacao: string;
+  foto_url?: string;
 }
 
 export interface PreventiveChecklistSubmission {
@@ -43,12 +44,14 @@ export interface BatteryRechargeRecord {
   created_at: string;
   data: string;
   patrimonio: string;
+  bateria_id?: string;
   horimetro: number;
   operador_inicio: string;
   operador_termino: string;
   hora_inicio: string;
   hora_termino: string;
   carregador_status: 'OK' | 'NOK';
+  foto_nok_url?: string;
   reposicao_agua: boolean;
   responsavel_reposicao: string;
   observacoes: string;
@@ -105,6 +108,7 @@ export interface HistoricoInspecao {
     itemLabel: string;
     status: 'OK' | 'NOK';
     observacao: string;
+    foto_url?: string;
   }[];
   observacao_geral: string;
 }

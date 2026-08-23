@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { BatteryCharging, Clock3, Droplets, Gauge, Wrench } from 'lucide-react';
-import { LocalDb, generateUUID } from '../lib/db';
+import { BatteryCharging, Clock3, Droplets, Gauge, Wrench, Camera, X } from 'lucide-react';
+import { LocalDb, generateUUID, fetchBaterias } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
 import { useAuth } from '../context/AuthContext';
+import { uploadFotoNok } from '../lib/supabaseStorage';
 import { BatteryRechargeRecord, Equipment } from '../types';
 import StatusToggle from '../components/StatusToggle';
 import SignatureField from '../components/SignatureField';
@@ -25,28 +26,45 @@ export default function BatteryRecharge() {
   const [observacoes, setObservacoes] = useState('');
   const [signatureName, setSignatureName] = useState(user?.name || '');
   const [signatureAccepted, setSignatureAccepted] = useState(false);
+  const [baterias, setBaterias] = useState<{ id: string; numero: number }[]>([]);
+  const [bateriaId, setBateriaId] = useState('');
+  const [fotoNok, setFotoNok] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchBaterias().then(setBaterias).catch(() => {});
+  }, []);
 
   const latest = useMemo(() => LocalDb.getBatteryRechargeRecords().slice(0, 4), [toast.visible]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!patrimonio) return showToast('Selecione o patrimônio do equipamento.', 'error');
+    if (baterias.length > 0 && !bateriaId) return showToast('Selecione a bateria utilizada.', 'error');
+    if (carregadorStatus === 'NOK' && !fotoNok) return showToast('Foto do carregador obrigatória quando o status é NOK.', 'error');
     if (!horaInicio || !horaTermino) return showToast('Preencha horário de início e término.', 'error');
     if (!inicioOperador.trim() || !terminoOperador.trim()) return showToast('Informe operadores de início e término.', 'error');
     if (reposicaoAgua && !responsavelReposicao.trim()) return showToast('Informe o responsável pela reposição de água.', 'error');
     if (!signatureName.trim() || !signatureAccepted) return showToast('Assinatura digital obrigatória.', 'error');
 
+    const isValidUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+    let fotoNokUrl: string | undefined;
+    if (carregadorStatus === 'NOK' && fotoNok) {
+      fotoNokUrl = await uploadFotoNok(fotoNok, 'carregador') || undefined;
+    }
     const now = new Date();
     const payload: BatteryRechargeRecord = {
       id: generateUUID(),
       created_at: now.toISOString(),
       data: now.toISOString().slice(0, 10),
       patrimonio,
+      bateria_id: isValidUuid(bateriaId) ? bateriaId : undefined,
       horimetro: Number(horimetro.replace(',', '.')) || 0,
       operador_inicio: inicioOperador.trim(),
       operador_termino: terminoOperador.trim(),
       hora_inicio: horaInicio,
       hora_termino: horaTermino,
       carregador_status: carregadorStatus,
+      foto_nok_url: fotoNokUrl,
       reposicao_agua: reposicaoAgua,
       responsavel_reposicao: responsavelReposicao.trim(),
       observacoes: observacoes.trim(),
@@ -57,6 +75,9 @@ export default function BatteryRecharge() {
     LocalDb.saveBatteryRechargeRecord(payload);
     showToast('Módulo de recarga registrado.');
     setPatrimonio('');
+    setBateriaId('');
+    setFotoNok(null);
+    setFotoPreview(null);
     setHorimetro('');
     setHoraInicio('');
     setHoraTermino('');
@@ -92,6 +113,18 @@ export default function BatteryRecharge() {
             <option value="">Selecionar equipamento</option>
             {equipments.map((eq) => (
               <option key={eq.id} value={eq.patrimonio}>{eq.patrimonio} - {eq.nome}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-1 tkf-label">
+            <BatteryCharging className="h-3.5 w-3.5 text-[#4364f7]" /> Bateria
+          </label>
+          <select value={bateriaId} onChange={(event) => setBateriaId(event.target.value)} className="tkf-select mt-1.5">
+            <option value="">Selecionar bateria</option>
+            {baterias.map((b) => (
+              <option key={b.id} value={b.id}>Bateria {b.numero}</option>
             ))}
           </select>
         </div>
@@ -135,6 +168,47 @@ export default function BatteryRecharge() {
           <label className="tkf-label">Situação do carregador</label>
           <div className="w-36"><StatusToggle value={carregadorStatus} onChange={setCarregadorStatus} size="sm" /></div>
         </div>
+
+        {carregadorStatus === 'NOK' && (
+          <div className="space-y-2">
+            {!fotoPreview ? (
+              <div
+                onClick={() => document.getElementById('foto-nok-input')?.click()}
+                className="flex items-center gap-2 rounded-xl border border-dashed border-red-500/30 bg-red-500/5 px-3 py-3 cursor-pointer hover:border-red-500/60 transition-all"
+              >
+                <Camera className="h-4 w-4 text-red-400/60" />
+                <span className="text-xs text-red-300">Foto do carregador (obrigatória)</span>
+              </div>
+            ) : (
+              <div className="relative rounded-xl overflow-hidden border border-red-500/30">
+                <img src={fotoPreview} alt="Preview do carregador" className="w-full max-h-40 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFotoNok(null);
+                    setFotoPreview(null);
+                  }}
+                  className="absolute top-1 right-1 rounded-full bg-black/60 p-1 text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+            <input
+              id="foto-nok-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setFotoNok(file);
+                setFotoPreview(URL.createObjectURL(file));
+              }}
+            />
+          </div>
+        )}
 
         <label className="flex items-center gap-3 rounded-xl border border-white/5 bg-[#131a2c]/40 px-3 py-3 text-sm font-medium text-slate-300">
           <Droplets className="h-4 w-4 text-[#4364f7]" />

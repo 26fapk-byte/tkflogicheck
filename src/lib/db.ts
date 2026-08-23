@@ -241,7 +241,7 @@ export class LocalDb {
 
   private static queueForSync(
     table: SyncQueueEntry['table'],
-    records: Array<ChecklistRecord | PreventiveChecklistSubmission | BatteryRechargeRecord>
+    records: Array<ChecklistRecord | PreventiveChecklistSubmission | BatteryRechargeRecord | HistoricoInspecao>
   ) {
     try {
       const raw = localStorage.getItem(KEY_SYNC_QUEUE);
@@ -675,5 +675,24 @@ export async function fetchHistoricoInspecoesFromSupabase(): Promise<HistoricoIn
   } catch (err) {
     console.error('Erro de rede ao buscar historico_inspecoes:', err);
     return [];
+  }
+}
+
+export async function fetchBaterias(): Promise<{ id: string; numero: number }[]> {
+  if (!isSupabaseConfigured || !supabase) {
+    return [1,2,3,4,5,6].map(n => ({ id: String(n), numero: n }));
+  }
+  try {
+    const { data, error } = await supabase
+      .from('baterias')
+      .select('id, numero')
+      .eq('status', 'Ativa')
+      .order('numero', { ascending: true });
+    if (error || !data) {
+      return [1,2,3,4,5,6].map(n => ({ id: String(n), numero: n }));
+    }
+    return data;
+  } catch {
+    return [1,2,3,4,5,6].map(n => ({ id: String(n), numero: n }));
   }
 }
