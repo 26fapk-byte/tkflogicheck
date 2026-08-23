@@ -89,7 +89,7 @@ export default function Login() {
             </div>
           </section>
 
-          <div className="rounded-3xl border border-white/10 bg-[#0f172a]/85 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.35)]">
+          <div className="rounded-3xl border border-white/20 bg-[#0f172a]/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.35)]">
             <p className="mb-6 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Acesso Operacional</p>
             {reqError && (
               <div className="mb-5 flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-200">
@@ -99,18 +99,18 @@ export default function Login() {
             )}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300" htmlFor="email">
+                <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-200" htmlFor="email">
                   E-mail corporativo
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     id="email"
                     type="email"
                     placeholder="nome@empresa.com"
                     autoComplete="email"
-                    className={`h-11 w-full rounded-xl border bg-[#0b1222] pl-10 pr-4 text-sm text-white outline-none transition ${
-                      isEmailValid ? 'border-emerald-400/70' : 'border-white/15 focus:border-[#2563eb]'
+                    className={`h-11 w-full rounded-xl border bg-[#131a2c] pl-10 pr-4 text-sm text-white outline-none transition ${
+                      isEmailValid ? 'border-emerald-400/70' : 'border-white/25 focus:border-[#2563eb]'
                     }`}
                     {...register('email', {
                       required: 'O e-mail corporativo é obrigatório',
@@ -123,21 +123,21 @@ export default function Login() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300" htmlFor="password">
+                  <label className="text-[11px] font-bold uppercase tracking-[0.2em] text-slate-200" htmlFor="password">
                     Senha de acesso
                   </label>
-                  <button type="button" onClick={handleForgot} className="text-[11px] text-[#93c5fd] hover:text-white">
+                  <button type="button" onClick={handleForgot} className="text-[11px] font-semibold text-slate-300 hover:text-white underline underline-offset-2">
                     Esqueceu a senha?
                   </button>
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     autoComplete="current-password"
-                    className="h-11 w-full rounded-xl border border-white/15 bg-[#0b1222] pl-10 pr-11 text-sm text-white outline-none transition focus:border-[#2563eb]"
+                    className="h-11 w-full rounded-xl border border-white/25 bg-[#131a2c] pl-10 pr-11 text-sm text-white outline-none transition focus:border-[#2563eb]"
                     {...register('password', {
                       required: 'A senha é necessária',
                       minLength: { value: 6, message: 'Senha deve conter no mínimo 6 caracteres' }
@@ -153,7 +153,7 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#2563eb] text-sm font-semibold text-white transition hover:bg-[#1e40af] disabled:opacity-70"
+                className="mt-2 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#2563eb] text-base font-bold text-white transition hover:bg-[#1e40af] active:scale-[0.98] disabled:opacity-70 shadow-[0_4px_16px_rgba(37,99,235,0.4)]"
               >
                 {submitting ? (
                   <>

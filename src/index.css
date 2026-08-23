@@ -1,16 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --tkf-bg-dark: #07090e;
-  /* Fundo super escuro premium */
-  --tkf-card-dark: #0e131f;
-  /* Fundo dos cartões e inputs */
-  --tkf-border-dark: #1e293b;
-  /* Bordas sutis */
-  --tkf-blue-gradient-start: #0052d4;
-  --tkf-blue-gradient-end: #4364f7;
-  --tkf-text-main: #f8fafc;
-  --tkf-text-muted: #94a3b8;
+  --tkf-bg-dark: #0a0e1a;
+  --tkf-card-dark: #111827;
+  --tkf-border-dark: #2d3748;
+  --tkf-blue-gradient-start: #1a56db;
+  --tkf-blue-gradient-end: #5b7fff;
+  --tkf-text-main: #f1f5f9;
+  --tkf-text-muted: #cbd5e1;
 }
 
 * {
@@ -20,8 +17,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  /* Fundo Dark Gradiente alinhado com a identidade visual */
-  background: radial-gradient(circle at 50% 0%, #0d1527 0%, var(--tkf-bg-dark) 70%);
+  background: radial-gradient(circle at 50% 0%, #0f1f3d 0%, var(--tkf-bg-dark) 65%);
   color: var(--tkf-text-main);
   font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -31,9 +27,9 @@ body {
 /* Classes globais do Design System aplicadas ao padrão Dark Premium */
 .tkf-card {
   background-color: var(--tkf-card-dark);
-  border: 1px solid var(--tkf-border-dark);
+  border: 1px solid #374151;
   border-radius: 1rem;
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
 }
 
 .tkf-card-muted {
@@ -51,10 +47,10 @@ body {
 
 .tkf-label {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--tkf-text-muted);
+  letter-spacing: 0.16em;
+  color: #94a3b8;
 }
 
 .tkf-input,
@@ -62,12 +58,12 @@ body {
   height: 3rem;
   width: 100%;
   border-radius: 0.75rem;
-  border: 1px solid var(--tkf-border-dark);
-  background-color: #131a2c;
+  border: 1px solid #374151;
+  background-color: #1a2236;
   padding-left: 0.75rem;
   padding-right: 0.75rem;
   font-size: 0.875rem;
-  color: var(--tkf-text-main);
+  color: #f1f5f9;
   outline: none;
   transition: all 0.2s ease-in-out;
 }
@@ -138,10 +134,18 @@ body {
 
 .tkf-empty {
   border-radius: 0.75rem;
-  border: 1px dashed #334155;
-  background-color: rgba(14, 19, 31, 0.4);
+  border: 1px dashed #4b5563;
+  background-color: rgba(17, 24, 39, 0.6);
   padding: 1rem;
   font-size: 0.875rem;
   text-align: center;
-  color: var(--tkf-text-muted);
+  color: #94a3b8;
+}
+
+.tkf-kpi {
+  font-size: 2rem;
+  font-weight: 800;
+  color: #f8fafc;
+  letter-spacing: -0.03em;
+  line-height: 1;
 }
