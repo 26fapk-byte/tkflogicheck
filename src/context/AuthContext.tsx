@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { DEV_USERS } from '../dev/dev_users';
 
 // Role detection helper based on email string (produces Portuguese role labels)
 const getRoleFromEmail = (email: string): 'master' | 'gerente' | 'operador' => {
@@ -29,9 +30,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
+  const devAuth = (import.meta as any).env.VITE_DEV_AUTH === 'true';
 
   useEffect(() => {
     const handleAuthChange = async () => {
+      if (devAuth) {
+        // Demo mode: no external auth, allow immediate use
+        setLoading(false);
+        return;
+      }
       if (isSupabaseConfigured && supabase) {
         // Clean session check
         const { data: { session } } = await supabase.auth.getSession();
@@ -104,6 +111,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setLoading(true);
+    if ((import.meta as any).env.VITE_DEV_AUTH === 'true') {
+      // local demo auth
+      const found = DEV_USERS.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (found && (found.password === password || found.password === '')) {
+        setUser({ email: found.email, role: (found.role as any), name: found.name || found.email, id: found.id });
+        setLoading(false);
+        return { success: true };
+      }
+      setLoading(false);
+      return { success: false, error: 'E-mail corporativo ou senha inválidos. Por favor, tente novamente.' };
+    }
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -168,7 +186,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
         return { success: false, error: 'Ocorreu um erro de rede ou comunicação com o servidor.' };
       }
-    } else {
+    }
+    else {
       setLoading(false);
       return {
         success: false,
