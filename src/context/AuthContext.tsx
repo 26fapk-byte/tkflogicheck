@@ -20,6 +20,7 @@ interface AuthContextType {
   user: UserSession | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -106,15 +107,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        // Debug: log Supabase response for troubleshooting
+        // eslint-disable-next-line no-console
+        console.debug('supabase.signInWithPassword response', { data, error });
         if (error) {
+          // eslint-disable-next-line no-console
+          console.error('Supabase login error detail:', error);
           setLoading(false);
-          // Customize typical Supabase error messages into clean Portuguese
-          let friendlyError = error.message;
-          if (error.message.includes('Invalid login credentials')) {
-            friendlyError = 'E-mail corporativo ou senha inválidos. Por favor, tente novamente.';
-          } else if (error.message.includes('Email not confirmed')) {
-            friendlyError = 'E-mail cadastrado, mas ainda não confirmado. Verifique sua caixa de entrada.';
+          // Map Supabase error messages / codes to friendly Portuguese messages
+          let friendlyError = error.message || 'Falha na autenticação.';
+
+          // Try to detect structured error codes from `data` when available
+          const errorCode = (data as any)?.error?.error_code || (data as any)?.error_code || (error as any)?.name || '';
+
+          if (typeof friendlyError === 'string') {
+            const msg = friendlyError.toLowerCase();
+            if (msg.includes('invalid login credentials') || errorCode === 'invalid_credentials' || msg.includes('invalid_credentials')) {
+              friendlyError = 'E-mail corporativo ou senha inválidos. Por favor, tente novamente.';
+            } else if (msg.includes('email not confirmed') || errorCode === 'email_not_confirmed') {
+              friendlyError = 'E-mail cadastrado, mas ainda não confirmado. Verifique sua caixa de entrada.';
+            } else if (msg.includes('too many requests') || errorCode === 'too_many_requests') {
+              friendlyError = 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
+            } else if (msg.includes('unauthorized') || errorCode === 'unauthorized') {
+              friendlyError = 'Requisição não autorizada. Verifique a configuração do Supabase.';
+            }
           }
+
           return { success: false, error: friendlyError };
         }
         if (data.user) {
@@ -159,6 +177,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const resetPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: false, error: 'Supabase não está configurado no ambiente.' };
+    }
+    try {
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: (typeof window !== 'undefined' && window.location.origin) ? window.location.origin : undefined,
+      } as any);
+      // eslint-disable-next-line no-console
+      console.debug('supabase.resetPasswordForEmail response', { data, error });
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error('Supabase reset password error detail:', error);
+        let friendly = error.message || 'Falha ao solicitar recuperação de senha.';
+        const code = (data as any)?.error_code || (error as any)?.name || '';
+        if (code === 'invalid_request' || /not found/i.test(friendly)) {
+          friendly = 'E-mail não encontrado. Verifique o e-mail informado.';
+        }
+        return { success: false, error: friendly };
+      }
+      return { success: true };
+    } catch (err: any) {
+      // eslint-disable-next-line no-console
+      console.error('Reset password unexpected error', err);
+      return { success: false, error: 'Erro ao solicitar recuperação de senha.' };
+    }
+  };
+
   const logout = async () => {
     if (isSupabaseConfigured && supabase) {
       await supabase.auth.signOut();
@@ -167,7 +213,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, resetPassword, logout }}>
       {children}
     </AuthContext.Provider>
   );

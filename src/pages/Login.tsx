@@ -14,6 +14,7 @@ import BrandMark from '../components/BrandMark';
 
 export default function Login() {
   const { login } = useAuth();
+  const { resetPassword } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [reqError, setReqError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,6 +41,30 @@ export default function Login() {
       }
     } catch (e: any) {
       setReqError('Conectividade interrompida. Verifique sua rede e tente novamente.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const [forgotStatus, setForgotStatus] = useState<string | null>(null);
+  const handleForgot = async () => {
+    setReqError(null);
+    setForgotStatus(null);
+    const email = emailValue;
+    if (!email || !emailRegex.test(email)) {
+      setReqError('Informe um e-mail válido para recuperação.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await resetPassword(email);
+      if (!res.success) {
+        setReqError(res.error || 'Falha ao solicitar recuperação de senha.');
+      } else {
+        setForgotStatus('Solicitação enviada — verifique sua caixa de entrada para o link de redefinição.');
+      }
+    } catch (e: any) {
+      setReqError('Erro ao comunicar com o servidor. Tente novamente mais tarde.');
     } finally {
       setSubmitting(false);
     }
@@ -101,9 +126,9 @@ export default function Login() {
                   <label className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300" htmlFor="password">
                     Senha de acesso
                   </label>
-                  <a href="mailto:suporte@tkflogicheck.com?subject=Recupera%C3%A7%C3%A3o%20de%20senha" className="text-[11px] text-[#93c5fd] hover:text-white">
+                  <button type="button" onClick={handleForgot} className="text-[11px] text-[#93c5fd] hover:text-white">
                     Esqueceu a senha?
-                  </a>
+                  </button>
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -137,6 +162,9 @@ export default function Login() {
                   </>
                 ) : 'Entrar no Sistema'}
               </button>
+              {forgotStatus && (
+                <p className="mt-3 text-sm text-emerald-300">{forgotStatus}</p>
+              )}
             </form>
           </div>
         </div>

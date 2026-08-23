@@ -14,18 +14,14 @@ function AppContent() {
   const { user, loading } = useAuth();
   const [tab, setTab] = useState<
     'dashboard' | 'new-record' | 'preventive-checklist' | 'battery-recharge' | 'history' | 'team-management' | 'manage-users'
-  >('preventive-checklist');
+  >('new-record');
 
-  // Automatically select default screen based on authorization role
+  // All users land on the daily checklist after sign-in
   React.useEffect(() => {
-    if (user) {
-      if (user.role === 'gerente' || user.role === 'master') {
-        setTab('dashboard');
-      } else {
-        setTab('preventive-checklist');
-      }
+    if (!loading && user) {
+      setTab('new-record');
     }
-  }, [user]);
+  }, [user, loading]);
 
   // Loading indicator for active auth check
   if (loading) {
