@@ -35,6 +35,14 @@ FOR SELECT
 TO authenticated 
 USING (true);
 
+-- Campos adicionados ao checklist padrão. O IF NOT EXISTS também corrige
+-- projetos que já tinham criado a tabela antes destes dados serem usados.
+ALTER TABLE public.registros_checklist
+  ADD COLUMN IF NOT EXISTS patrimonio VARCHAR(120) DEFAULT '' NOT NULL,
+  ADD COLUMN IF NOT EXISTS horimetro NUMERIC(12,2),
+  ADD COLUMN IF NOT EXISTS ligando VARCHAR(10),
+  ADD COLUMN IF NOT EXISTS bateria_barras INT;
+
 -- Permite deleção/reparação apenas por administradores ou gerentes se for desejado (Opcional - por padrão bloqueado)
 
 -- 4. Criação de índices para otimização de buscas operacionais no BI e Power BI
