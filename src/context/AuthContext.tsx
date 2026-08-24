@@ -41,8 +41,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (isSupabaseConfigured && supabase) {
         // Clean session check
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session && session.user) {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          console.warn('Sessão Supabase inválida; limpando sessão local.', sessionError.message);
+          await supabase.auth.signOut({ scope: 'local' });
+        } else if (session && session.user) {
           const email = session.user.email || '';
           const userId = session.user.id;
           let role: 'master' | 'gerente' | 'operador' = getRoleFromEmail(email);
@@ -58,7 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               else if (profile.nivel_acesso === 'gerente') role = 'gerente';
               else role = 'operador';
             }
-          } catch {}
+          } catch { }
 
           setUser({
             email,
@@ -70,7 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // Listen to changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            if (session && session.user) {
+          if (session && session.user) {
             const email = session.user.email || '';
             const userId = session.user.id;
             let role: 'master' | 'gerente' | 'operador' = getRoleFromEmail(email);
@@ -86,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 else if (profile.nivel_acesso === 'gerente') role = 'gerente';
                 else role = 'operador';
               }
-            } catch {}
+            } catch { }
 
             setUser({
               email,
@@ -169,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               else if (profile.nivel_acesso === 'gerente') role = 'gerente';
               else role = 'operador';
             }
-          } catch {}
+          } catch { }
 
           setUser({
             email: userEmail,
