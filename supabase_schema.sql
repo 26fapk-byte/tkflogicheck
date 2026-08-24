@@ -38,10 +38,22 @@ USING (true);
 -- Campos adicionados ao checklist padrão. O IF NOT EXISTS também corrige
 -- projetos que já tinham criado a tabela antes destes dados serem usados.
 ALTER TABLE public.registros_checklist
+    ADD COLUMN IF NOT EXISTS equipamento VARCHAR(255) DEFAULT '' NOT NULL,
+    ADD COLUMN IF NOT EXISTS item VARCHAR(255) DEFAULT 'Geral' NOT NULL,
+    ADD COLUMN IF NOT EXISTS status VARCHAR(10) DEFAULT 'OK' NOT NULL CHECK (status IN ('OK', 'NOK')),
+    ADD COLUMN IF NOT EXISTS observacao TEXT DEFAULT '' NOT NULL,
   ADD COLUMN IF NOT EXISTS patrimonio VARCHAR(120) DEFAULT '' NOT NULL,
   ADD COLUMN IF NOT EXISTS horimetro NUMERIC(12,2),
   ADD COLUMN IF NOT EXISTS ligando VARCHAR(10),
-  ADD COLUMN IF NOT EXISTS bateria_barras INT;
+    ADD COLUMN IF NOT EXISTS bateria_barras INT,
+    ADD COLUMN IF NOT EXISTS vazamentos VARCHAR(255) DEFAULT '' NOT NULL,
+    ADD COLUMN IF NOT EXISTS sinais_luminosos VARCHAR(255) DEFAULT '' NOT NULL,
+    ADD COLUMN IF NOT EXISTS limpeza VARCHAR(255) DEFAULT '' NOT NULL;
+
+ALTER TABLE public.registros_checklist
+    ALTER COLUMN vazamentos SET DEFAULT '',
+    ALTER COLUMN sinais_luminosos SET DEFAULT '',
+    ALTER COLUMN limpeza SET DEFAULT '';
 
 -- Permite deleção/reparação apenas por administradores ou gerentes se for desejado (Opcional - por padrão bloqueado)
 

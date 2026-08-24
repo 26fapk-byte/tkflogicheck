@@ -134,7 +134,7 @@ export default function NewRecord() {
       showToast('Por favor, selecione qual veículo está sendo inspecionado.', 'error');
       return;
     }
-    
+
     const parsedHorimetroStr = horimetro ? horimetro.toString().trim() : '';
     const parsedHorimetro = Number(parsedHorimetroStr.replace(',', '.'));
     if (!parsedHorimetroStr || isNaN(parsedHorimetro) || parsedHorimetro < 0) {
@@ -254,7 +254,7 @@ export default function NewRecord() {
       setLigando('OK');
       setBateriaBarras(4);
       setGeneralObservation('');
-      
+
       const resetStatus: Record<string, 'OK' | 'NOK'> = {};
       const resetObs: Record<string, string> = {};
       CHECKLIST_ITEMS.forEach(i => {
@@ -277,14 +277,13 @@ export default function NewRecord() {
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6 relative pb-24 text-white">
-      
+
       {toast.visible && (
-        <div 
-          className={`tkf-toast flex items-center justify-center gap-3 ${
-            toast.type === 'success' 
-              ? 'border-emerald-500 bg-[#0e131f] text-emerald-300' 
+        <div
+          className={`tkf-toast flex items-center justify-center gap-3 ${toast.type === 'success'
+              ? 'border-emerald-500 bg-[#0e131f] text-emerald-300'
               : 'border-red-500 bg-[#0e131f] text-red-300'
-          }`}
+            }`}
         >
           {toast.type === 'success' ? (
             <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-400" />
@@ -303,7 +302,7 @@ export default function NewRecord() {
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
-        
+
         <section className="tkf-card p-4 grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
@@ -409,11 +408,10 @@ export default function NewRecord() {
                   key={b}
                   type="button"
                   onClick={() => setBateriaBarras(b)}
-                  className={`h-11 rounded-lg font-bold text-xs border transition-all cursor-pointer flex flex-col items-center justify-center ${
-                    bateriaBarras === b
+                  className={`h-11 rounded-lg font-bold text-xs border transition-all cursor-pointer flex flex-col items-center justify-center ${bateriaBarras === b
                       ? 'bg-[#4364f7] text-white border-[#4364f7]'
                       : 'bg-[#131a2c] border-white/10 text-slate-300 hover:bg-slate-800'
-                  }`}
+                    }`}
                 >
                   <span>{b}</span>
                   <span className="text-[7px] opacity-75">{b === 5 ? 'Cheio' : `${b} B`}</span>
@@ -459,7 +457,7 @@ export default function NewRecord() {
 
               return (
                 <div key={item.key} className={`pt-4 first:pt-0 space-y-2.5 ${itemStatus === 'NOK' ? 'bg-[#ffdad6]/5 -mx-4 px-4 py-2 rounded-lg' : ''}`}>
-                  
+
                   <div className="flex items-start justify-between gap-3">
                     <div className="space-y-0.5">
                       <span className={`inline-block text-[8px] font-bold px-1.5 py-0.2 rounded ${cat.bg} ${cat.text} tracking-wider`}>

@@ -19,7 +19,7 @@ export function generateUUID(): string {
       // fallback handled below
     }
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = Math.random() * 16 | 0;
     const v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
@@ -248,7 +248,7 @@ export class LocalDb {
       const queue: SyncQueueEntry[] = raw ? JSON.parse(raw) : [];
       const entries: SyncQueueEntry[] = records.map((record) => ({ table, payload: record }));
       localStorage.setItem(KEY_SYNC_QUEUE, JSON.stringify([...queue, ...entries]));
-    } catch {}
+    } catch { }
   }
 
   static async processSyncQueue(): Promise<boolean> {
@@ -334,6 +334,13 @@ export class LocalDb {
 
       let allSuccess = true;
 
+      const describeSyncError = (error: any) => ({
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint
+      });
+
       for (const [table, items] of Object.entries(entriesByTable)) {
         if (!items.length) continue;
 
@@ -341,17 +348,19 @@ export class LocalDb {
         const { error } = await supabase.from(table as any).insert(rows);
 
         if (error) {
-          console.error(`Erro ao sincronizar lote na tabela ${table}:`, error);
+          console.error(`Erro ao sincronizar lote na tabela ${table}:`, describeSyncError(error));
           allSuccess = false;
 
-          // Fallback: try inserting each item individually to bypass duplicate key blocks
+          // Retry individually only for duplicate batches, preserving useful server errors.
+          if (error.code !== '23505') continue;
+
           for (const item of items) {
             const { error: singleError } = await supabase.from(table as any).insert(item.row);
             if (!singleError || singleError.code === '23505') {
               // Success or already exists in database
               syncedIds.add(item.entry.payload.id);
             } else {
-              console.error(`Erro ao sincronizar item individual (${item.entry.payload.id}) na tabela ${table}:`, singleError);
+              console.error(`Erro ao sincronizar item individual (${item.entry.payload.id}) na tabela ${table}:`, describeSyncError(singleError));
             }
           }
         } else {
@@ -393,7 +402,7 @@ export class LocalDb {
           try {
             const { error } = await supabase.from('registros_checklist').delete().eq('id', id);
             if (error) return;
-          } catch {}
+          } catch { }
         })();
       }
 
@@ -550,7 +559,7 @@ export class LocalDb {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .slice(-7)
       .map(([date, val]) => {
-        const [,, d] = date.split('-');
+        const [, , d] = date.split('-');
         return {
           date: `${d}`, // Day of month label
           value: val
@@ -636,12 +645,12 @@ export async function fetchPreventiveChecklistsFromSupabase(): Promise<Preventiv
       .select('*')
       .order('data', { ascending: false })
       .order('hora', { ascending: false });
-      
+
     if (error) {
       console.error('Erro ao carregar checklists preventivos do Supabase:', error);
       return [];
     }
-    
+
     return (data || []).map((row: any) => ({
       ...row,
       itens: typeof row.itens === 'string' ? JSON.parse(row.itens) : row.itens
