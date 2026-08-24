@@ -229,14 +229,14 @@ export class LocalDb {
     this.processSyncQueue();
   }
 
-  static saveRecords(newRecords: ChecklistRecord[]) {
+  static async saveRecords(newRecords: ChecklistRecord[]): Promise<boolean> {
     const current = this.getRecords();
     const updated = [...newRecords, ...current];
     localStorage.setItem(KEY_RECORDS, JSON.stringify(updated));
 
     // Try to sync to Supabase if available
     this.queueForSync('registros_checklist', newRecords);
-    this.processSyncQueue();
+    return this.processSyncQueue();
   }
 
   private static queueForSync(

@@ -209,7 +209,7 @@ export default function NewRecord() {
         });
       }
 
-      LocalDb.saveRecords(newRecordsToAdd);
+      const synced = await LocalDb.saveRecords(newRecordsToAdd);
 
       // Save unified inspection to the new historico_inspecoes table
       const statusGeral = CHECKLIST_ITEMS.some(item => itemsStatus[item.key] === 'NOK') ? 'NOK' : 'OK';
@@ -242,7 +242,12 @@ export default function NewRecord() {
         navigator.vibrate([100, 50, 100]);
       }
 
-      showToast('Checklist de Empilhadeira registrado com sucesso!', 'success');
+      showToast(
+        synced
+          ? 'Checklist de Empilhadeira registrado com sucesso!'
+          : 'Registro salvo neste dispositivo. A sincronização com o banco está pendente.',
+        synced ? 'success' : 'error'
+      );
 
       setEquipment('');
       setHorimetro('');
