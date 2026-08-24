@@ -1,14 +1,94 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { fetchPreventiveChecklistsFromSupabase } from '../lib/db';
+import {
+  fetchPreventiveChecklistsFromSupabase,
+  fetchHistoricoInspecoesFromSupabase,
+  fetchBatteryRechargesFromSupabase
+} from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
-import { PreventiveChecklistSubmission } from '../types';
-import { 
-  Search, 
+import {
+  PreventiveChecklistSubmission,
+  HistoricoInspecao,
+  BatteryRechargeRecord,
+  PreventiveChecklistItemResult
+} from '../types';
+
+type TipoRegistro = 'Diário' | 'Preventivo' | 'Recarga Bateria';
+
+interface UnifiedRecord {
+  id: string;
+  tipo: TipoRegistro;
+  data: string;
+  hora: string;
+  operador: string;
+  equipamento: string;
+  patrimonio: string;
+  horimetro?: number;
+  bateria_barras?: number;
+  status_geral: 'OK' | 'NOK';
+  itens: PreventiveChecklistItemResult[];
+  observacoes_gerais: string;
+  assinatura_nome: string;
+}
+
+const mapInspecao = (r: HistoricoInspecao): UnifiedRecord => ({
+  id: r.id,
+  tipo: 'Diário',
+  data: r.data,
+  hora: r.hora,
+  operador: r.operador,
+  equipamento: r.equipamento,
+  patrimonio: r.patrimonio || '',
+  horimetro: r.horimetro,
+  bateria_barras: r.bateria_barras,
+  status_geral: r.status_geral,
+  itens: r.itens || [],
+  observacoes_gerais: r.observacao_geral || '',
+  assinatura_nome: ''
+});
+
+const mapPreventivo = (r: PreventiveChecklistSubmission): UnifiedRecord => ({
+  id: r.id,
+  tipo: 'Preventivo',
+  data: r.data,
+  hora: r.hora,
+  operador: r.operador,
+  equipamento: r.equipamento,
+  patrimonio: r.patrimonio || '',
+  horimetro: r.horimetro,
+  bateria_barras: r.bateria_barras,
+  status_geral: r.status_geral,
+  itens: r.itens || [],
+  observacoes_gerais: r.observacoes_gerais || '',
+  assinatura_nome: r.assinatura_nome || ''
+});
+
+const mapRecarga = (r: BatteryRechargeRecord): UnifiedRecord => ({
+  id: r.id,
+  tipo: 'Recarga Bateria',
+  data: r.data,
+  hora: r.hora_termino,
+  operador: r.operador_termino || r.operador_inicio || '',
+  equipamento: r.patrimonio,
+  patrimonio: r.patrimonio || '',
+  horimetro: r.horimetro,
+  status_geral: r.carregador_status,
+  itens: r.carregador_status === 'NOK'
+    ? [{ itemKey: 'carregador', itemLabel: 'Carregador', status: 'NOK', observacao: r.observacoes || '' }]
+    : [],
+  observacoes_gerais: [
+    r.reposicao_agua ? `Reposição de água${r.responsavel_reposicao ? ` (${r.responsavel_reposicao})` : ''}` : '',
+    r.observacoes || ''
+  ].filter(Boolean).join(' | '),
+  assinatura_nome: r.assinatura_nome || ''
+});
+import {
+  Search,
   FileSpreadsheet,
-  Clock, 
-  User, 
+  Clock,
+  User,
   Truck,
-  RefreshCw
+  RefreshCw,
+  Camera
 } from 'lucide-react';
 
 export default function History() {
@@ -16,22 +96,31 @@ export default function History() {
   const [filterMonth, setFilterMonth] = useState('Todos');
   const [filterEq, setFilterEq] = useState('Todos');
   const [filterStatus, setFilterStatus] = useState('Todos');
+  const [filterTipo, setFilterTipo] = useState('Todos');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-  const [records, setRecords] = useState<PreventiveChecklistSubmission[]>([]);
+  const [records, setRecords] = useState<UnifiedRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   // Dynamic Infinite Scroll / Load More state for high performance
   const [visibleCount, setVisibleCount] = useState(100);
 
   const { equipments } = useEquipments();
 
-  // Load records from Supabase database (no LocalStorage or offline cache)
+  // Load records from Supabase database (all modules: daily, preventive, battery recharge)
   useEffect(() => {
     const loadAllRecords = async () => {
       setLoading(true);
       try {
-        const remoteRecords = await fetchPreventiveChecklistsFromSupabase();
-        setRecords(remoteRecords);
+        const [inspecoes, preventivos, recargas] = await Promise.all([
+          fetchHistoricoInspecoesFromSupabase(),
+          fetchPreventiveChecklistsFromSupabase(),
+          fetchBatteryRechargesFromSupabase()
+        ]);
+        setRecords([
+          ...inspecoes.map(mapInspecao),
+          ...preventivos.map(mapPreventivo),
+          ...recargas.map(mapRecarga)
+        ]);
       } catch (err) {
         console.error('Erro ao buscar registros do Supabase para o histórico:', err);
       } finally {
@@ -89,6 +178,11 @@ export default function History() {
       result = result.filter(r => r.status_geral === filterStatus);
     }
 
+    // Type filter (module)
+    if (filterTipo !== 'Todos') {
+      result = result.filter(r => r.tipo === filterTipo);
+    }
+
     // Sort Chronologically order
     result.sort((a, b) => {
       const dateA = `${a.data}T${a.hora || '00:00'}:00`;
@@ -99,7 +193,7 @@ export default function History() {
     });
 
     return result;
-  }, [records, searchTerm, filterMonth, filterEq, filterStatus, sortOrder]);
+  }, [records, searchTerm, filterMonth, filterEq, filterStatus, filterTipo, sortOrder]);
 
   // Dynamic slice of filtered records based on visibility threshold
   const displayedRecords = useMemo(() => {
@@ -109,21 +203,26 @@ export default function History() {
   // Reset visibility count when filters are changed to keep render pipeline lightweight
   useEffect(() => {
     setVisibleCount(100);
-  }, [searchTerm, filterMonth, filterEq, filterStatus]);
+  }, [searchTerm, filterMonth, filterEq, filterStatus, filterTipo]);
 
   const handleExportCSV = () => {
     try {
       // Fast procedural conversion of filtered history into CSV string formats
-      const headers = ['Data', 'Hora', 'Operador', 'Equipamento', 'Patrimonio', 'Horimetro', 'Barras_Bateria', 'Status Geral', 'Itens NOK', 'Observacoes Gerais', 'Assinatura'];
+      const headers = ['Tipo', 'Data', 'Hora', 'Operador', 'Equipamento', 'Patrimonio', 'Horimetro', 'Barras_Bateria', 'Status Geral', 'Itens NOK', 'Fotos NOK', 'Observacoes Gerais', 'Assinatura'];
       const csvRows = [headers.join(',')];
 
       filteredRecords.forEach(r => {
-        const itensNokStr = (r.itens || [])
-          .filter(i => i.status === 'NOK')
+        const itensNok = (r.itens || []).filter(i => i.status === 'NOK');
+        const itensNokStr = itensNok
           .map(i => `${i.itemLabel}${i.observacao ? ` (${i.observacao})` : ''}`)
           .join('; ');
+        const fotosNokStr = itensNok
+          .filter(i => i.foto_url)
+          .map(i => i.foto_url!)
+          .join(' ');
 
         const row = [
+          `"${r.tipo}"`,
           r.data ? r.data.split('-').reverse().join('/') : '',
           r.hora || '',
           `"${(r.operador || '').replace(/"/g, '""')}"`,
@@ -133,6 +232,7 @@ export default function History() {
           r.bateria_barras || '',
           r.status_geral || '',
           `"${itensNokStr.replace(/"/g, '""')}"`,
+          `"${fotosNokStr.replace(/"/g, '""')}"`,
           `"${(r.observacoes_gerais || '').replace(/"/g, '""')}"`,
           `"${(r.assinatura_nome || '').replace(/"/g, '""')}"`
         ];
@@ -205,8 +305,25 @@ export default function History() {
         </div>
 
         {/* Modular Horizontal Selectors Scroll */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+
+          {/* Module type selective */}
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tipo</span>
+            <select
+              value={filterTipo}
+              onChange={(e) => {
+                setFilterTipo(e.target.value);
+              }}
+              className="tkf-select h-12 text-xs"
+            >
+              <option value="Todos">Todos os tipos</option>
+              <option value="Diário">Checklist Diário</option>
+              <option value="Preventivo">Checklist Preventivo</option>
+              <option value="Recarga Bateria">Recarga de Bateria</option>
+            </select>
+          </div>
+
           {/* Month selective */}
           <div className="space-y-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Mês</span>
@@ -304,13 +421,18 @@ export default function History() {
                     </div>
 
                     {/* Status Pill matching corporate standards */}
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                      isOk 
-                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
-                        : 'bg-red-500/10 border-red-500/20 text-red-300'
-                    }`}>
-                      {rec.status_geral}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full border bg-[#4364f7]/10 border-[#4364f7]/30 text-[#93c5fd] uppercase">
+                        {rec.tipo}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
+                        isOk
+                          ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                          : 'bg-red-500/10 border-red-500/20 text-red-300'
+                      }`}>
+                        {rec.status_geral}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Forklift & Operator metadata */}
@@ -329,14 +451,25 @@ export default function History() {
                   {!isOk && itensNok.length > 0 && (
                     <div className="bg-red-500/10 text-[10.5px] p-2.5 rounded border border-red-500/20 text-red-300 leading-relaxed space-y-1">
                       <span className="font-bold block">Avarias relatadas:</span>
-                      <ul className="list-disc list-inside">
-                        {itensNok.map(item => (
-                          <li key={item.itemKey}>
-                            <span className="font-semibold">{item.itemLabel}</span>
-                            {item.observacao && `: ${item.observacao}`}
-                          </li>
-                        ))}
-                      </ul>
+                        <ul className="list-disc list-inside">
+                          {itensNok.map(item => (
+                            <li key={item.itemKey}>
+                              <span className="font-semibold">{item.itemLabel}</span>
+                              {item.observacao && `: ${item.observacao}`}
+                              {item.foto_url && (
+                                <a
+                                  href={item.foto_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="ml-1.5 inline-flex items-center gap-0.5 font-bold text-[#93c5fd] underline decoration-dotted"
+                                >
+                                  <Camera className="w-3 h-3 inline" />
+                                  foto
+                                </a>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
                     </div>
                   )}
 
@@ -368,6 +501,7 @@ export default function History() {
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#131a2c] border-b border-white/5 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
               <tr>
+                <th className="px-5 py-3.5">Tipo</th>
                 <th className="px-5 py-3.5">Data/Hora</th>
                 <th className="px-5 py-3.5">Equipamento</th>
                 <th className="px-5 py-3.5">Patrimônio</th>
@@ -392,6 +526,11 @@ export default function History() {
                         isOk ? '' : 'bg-red-500/5'
                       }`}
                     >
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <span className="text-[9px] font-bold p-0.5 px-2 rounded-full border bg-[#4364f7]/10 border-[#4364f7]/30 text-[#93c5fd] uppercase">
+                          {rec.tipo}
+                        </span>
+                      </td>
                       <td className="px-5 py-4 whitespace-nowrap">
                         <span className="font-bold">{rec.data ? rec.data.split('-').reverse().join('/') : ''}</span>
                         <span className="text-slate-400 ml-1.5">{rec.hora || ''}</span>
@@ -429,6 +568,18 @@ export default function History() {
                               <span key={item.itemKey} className="text-red-300 font-semibold p-0.5 px-1.5 rounded bg-red-500/10 border border-red-500/15 text-[10px] block truncate" title={`${item.itemLabel}: ${item.observacao}`}>
                                 {item.itemLabel}
                                 {item.observacao && `: ${item.observacao}`}
+                                {item.foto_url && (
+                                  <a
+                                    href={item.foto_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="ml-1 inline-flex items-center gap-0.5 text-[#93c5fd] underline decoration-dotted"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Camera className="w-2.5 h-2.5 inline" />
+                                    foto
+                                  </a>
+                                )}
                               </span>
                             ))}
                           </div>
@@ -445,7 +596,7 @@ export default function History() {
                 })
               ) : (
                 <tr>
-                  <td colSpan={10} className="px-5 py-10 text-center text-slate-400">
+                  <td colSpan={11} className="px-5 py-10 text-center text-slate-400">
                     Nenhum checklist de empilhadeira localizado para as seleções inseridas.
                   </td>
                 </tr>

@@ -112,6 +112,7 @@ CREATE TABLE IF NOT EXISTS public.abastecimento_recarga_bateria (
     observacoes TEXT DEFAULT '' NOT NULL,
     assinatura_nome VARCHAR(255) NOT NULL,
     assinatura_confirmada BOOLEAN DEFAULT false NOT NULL,
+    foto_nok_url TEXT,
     user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE SET NULL
 );
 

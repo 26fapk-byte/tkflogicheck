@@ -705,6 +705,29 @@ export async function fetchHistoricoInspecoesFromSupabase(): Promise<HistoricoIn
   }
 }
 
+export async function fetchBatteryRechargesFromSupabase(): Promise<BatteryRechargeRecord[]> {
+  if (!isSupabaseConfigured || !supabase) {
+    return [];
+  }
+  try {
+    const { data, error } = await supabase
+      .from('abastecimento_recarga_bateria')
+      .select('*')
+      .order('data', { ascending: false })
+      .order('hora_termino', { ascending: false });
+
+    if (error) {
+      console.error('Erro ao buscar abastecimento_recarga_bateria:', error);
+      return [];
+    }
+
+    return (data || []) as BatteryRechargeRecord[];
+  } catch (err) {
+    console.error('Erro de rede ao buscar abastecimento_recarga_bateria:', err);
+    return [];
+  }
+}
+
 export async function fetchBaterias(): Promise<{ id: string; numero: number }[]> {
   if (!isSupabaseConfigured || !supabase) {
     return [1,2,3,4,5,6].map(n => ({ id: String(n), numero: n }));
