@@ -145,6 +145,8 @@ type SyncQueueEntry = {
 };
 
 export class LocalDb {
+  private static syncInProgress: Promise<boolean> | null = null;
+
   static init() {
     if (!localStorage.getItem(KEY_RECORDS)) {
       localStorage.setItem(KEY_RECORDS, JSON.stringify([]));
@@ -251,7 +253,19 @@ export class LocalDb {
     } catch { }
   }
 
-  static async processSyncQueue(): Promise<boolean> {
+  static processSyncQueue(): Promise<boolean> {
+    if (this.syncInProgress) return this.syncInProgress;
+
+    const syncPromise = this.processSyncQueueInternal();
+    this.syncInProgress = syncPromise.finally(() => {
+      if (this.syncInProgress === syncPromise) {
+        this.syncInProgress = null;
+      }
+    });
+    return this.syncInProgress;
+  }
+
+  private static async processSyncQueueInternal(): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) {
       return false;
     }
@@ -285,8 +299,12 @@ export class LocalDb {
       const syncedIds = new Set<string>();
       const entriesByTable: Record<string, { entry: SyncQueueEntry; row: any }[]> = {};
 
+      const processedQueueKeys = new Set<string>();
       queue.forEach((entry) => {
         if (!entry.payload) return;
+        const queueKey = `${entry.table}:${entry.payload.id}`;
+        if (processedQueueKeys.has(queueKey)) return;
+        processedQueueKeys.add(queueKey);
         let row: any = null;
 
         if (entry.table === 'registros_checklist') {
