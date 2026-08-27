@@ -82,17 +82,23 @@ export async function fetchEquipments(): Promise<Equipment[]> {
     return [];
   }
 
-  const { data, error } = await supabase
-    .from('equipamentos')
-    .select('id, nome, patrimonio, tipo, ativo')
-    .eq('ativo', true)
-    .order('patrimonio', { ascending: true });
-
-  if (error || !data) {
+  try {
+    const query = supabase
+      .from('equipamentos')
+      .select('id, nome, patrimonio, tipo, ativo')
+      .eq('ativo', true)
+      .order('patrimonio', { ascending: true })
+      .limit(200);
+    const { data, error } = await withFetchTimeout(query as any, 8000) as any;
+    if (error || !data) {
+      if (error) console.warn('fetchEquipments error:', error.message);
+      return [];
+    }
+    return data.map(mapEquipmentRow);
+  } catch (e) {
+    console.warn('fetchEquipments timeout/rede:', e);
     return [];
   }
-
-  return data.map(mapEquipmentRow);
 }
 
 export async function createEquipment(
@@ -236,9 +242,11 @@ export class LocalDb {
     const updated = [...newRecords, ...current];
     localStorage.setItem(KEY_RECORDS, JSON.stringify(updated));
 
-    // Try to sync to Supabase if available
+    // Enqueue and trigger background sync (non-blocking for UX)
     this.queueForSync('registros_checklist', newRecords);
-    return this.processSyncQueue();
+    // Fire-and-forget sync; UI shows "salvo localmente" imediatamente e sincroniza em background
+    this.processSyncQueue().catch(() => {});
+    return true;
   }
 
   private static queueForSync(
@@ -248,7 +256,7 @@ export class LocalDb {
     try {
       const raw = localStorage.getItem(KEY_SYNC_QUEUE);
       const queue: SyncQueueEntry[] = raw ? JSON.parse(raw) : [];
-      const entries: SyncQueueEntry[] = records.map((record) => ({ table, payload: record }));
+      const entries: SyncQueueEntry[] = records.map((record) => ({ table, payload: record, _attempts: 0 } as any));
       localStorage.setItem(KEY_SYNC_QUEUE, JSON.stringify([...queue, ...entries]));
     } catch { }
   }
@@ -265,6 +273,13 @@ export class LocalDb {
     return this.syncInProgress;
   }
 
+  private static withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms))
+    ]) as Promise<T>;
+  }
+
   private static async processSyncQueueInternal(): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) {
       return false;
@@ -275,18 +290,19 @@ export class LocalDb {
       if (!raw) return true;
 
       // Safe parse for sync queue
-      let queue: SyncQueueEntry[] = [];
+      let queue: (SyncQueueEntry & { _attempts?: number })[] = [];
       try {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return true;
-        queue = parsed.map((entry) => {
+        queue = parsed.map((entry: any) => {
           if (entry && typeof entry === 'object' && 'table' in entry && 'payload' in entry) {
-            return entry as SyncQueueEntry;
+            return entry as SyncQueueEntry & { _attempts?: number };
           }
           return {
             table: 'registros_checklist',
-            payload: entry as ChecklistRecord
-          };
+            payload: entry as ChecklistRecord,
+            _attempts: 0
+          } as any;
         });
       } catch {
         // Clear corrupted queue to prevent infinite crashes
@@ -297,10 +313,15 @@ export class LocalDb {
       if (queue.length === 0) return true;
 
       const syncedIds = new Set<string>();
-      const entriesByTable: Record<string, { entry: SyncQueueEntry; row: any }[]> = {};
+      const failedIds = new Set<string>();
+      const entriesByTable: Record<string, { entry: SyncQueueEntry & { _attempts?: number }; row: any }[]> = {};
 
       const processedQueueKeys = new Set<string>();
-      queue.forEach((entry) => {
+      // Limit per invocation to avoid huge batches blocking UI (process 60 entries max per cycle)
+      const queueSlice = queue.slice(0, 60);
+      const remainingUnprocessed = queue.slice(60);
+
+      queueSlice.forEach((entry) => {
         if (!entry.payload) return;
         const queueKey = `${entry.table}:${entry.payload.id}`;
         if (processedQueueKeys.has(queueKey)) return;
@@ -359,39 +380,118 @@ export class LocalDb {
         hint: error?.hint
       });
 
+      const CHUNK_SIZE = 20;
+
       for (const [table, items] of Object.entries(entriesByTable)) {
         if (!items.length) continue;
 
-        const rows = items.map(x => x.row);
-        const { error } = await supabase.from(table as any).insert(rows);
-
-        if (error) {
-          console.error(`Erro ao sincronizar lote na tabela ${table}:`, describeSyncError(error));
-          allSuccess = false;
-
-          // Retry individually only for duplicate batches, preserving useful server errors.
-          if (error.code !== '23505') continue;
-
-          for (const item of items) {
-            const { error: singleError } = await supabase.from(table as any).insert(item.row);
-            if (!singleError || singleError.code === '23505') {
-              // Success or already exists in database
-              syncedIds.add(item.entry.payload.id);
-            } else {
-              console.error(`Erro ao sincronizar item individual (${item.entry.payload.id}) na tabela ${table}:`, describeSyncError(singleError));
+        // Chunk large batches to reduce payload and Supabase timeout risk
+        for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+          const chunk = items.slice(i, i + CHUNK_SIZE);
+          const rows = chunk.map(x => x.row);
+          try {
+            const insertPromise = (supabase as any).from(table as any).insert(rows);
+            const { error } = await this.withTimeout(insertPromise, 12000, `insert ${table} chunk`) as any;
+            if (!error) {
+              chunk.forEach(x => syncedIds.add(x.entry.payload.id));
+              continue;
             }
+            console.error(`Erro ao sincronizar lote na tabela ${table} chunk ${i / CHUNK_SIZE}:`, describeSyncError(error));
+            allSuccess = false;
+
+            // For duplicate batch, retry individually (handles already-synced rows)
+            if (error.code === '23505') {
+              for (const item of chunk) {
+                try {
+                  const singlePromise = (supabase as any).from(table as any).insert(item.row);
+                  const { error: singleError } = await this.withTimeout(singlePromise, 8000, `insert single ${table}`) as any;
+                  if (!singleError || singleError.code === '23505') {
+                    syncedIds.add(item.entry.payload.id);
+                  } else {
+                    console.error(`Erro ao sincronizar item individual (${item.entry.payload.id}) na tabela ${table}:`, describeSyncError(singleError));
+                    const attempts = ((item.entry as any)._attempts || 0) + 1;
+                    (item.entry as any)._attempts = attempts;
+                    if (attempts >= 5) {
+                      console.warn(`Descartando item ${item.entry.payload.id} após ${attempts} falhas (dead-letter).`);
+                      syncedIds.add(item.entry.payload.id);
+                    } else {
+                      failedIds.add(item.entry.payload.id);
+                    }
+                  }
+                } catch (e) {
+                  console.error(`Timeout/erro individual ${item.entry.payload.id}`, e);
+                  const attempts = ((item.entry as any)._attempts || 0) + 1;
+                  (item.entry as any)._attempts = attempts;
+                  if (attempts < 5) failedIds.add(item.entry.payload.id);
+                  else syncedIds.add(item.entry.payload.id);
+                }
+              }
+            } else if (error.code === 'PGRST204' || error.code === '42703' || /column.*does not exist/i.test(error.message || '')) {
+              // Schema mismatch - do not retry infinitely, keep but warn; treat as non-blocking
+              console.warn(`Schema mismatch em ${table}, mantendo fila mas não bloqueando:`, error.message);
+              chunk.forEach(x => failedIds.add(x.entry.payload.id));
+              // increment attempts so it eventually gets dead-lettered
+              chunk.forEach(x => {
+                const attempts = ((x.entry as any)._attempts || 0) + 1;
+                (x.entry as any)._attempts = attempts;
+                if (attempts >= 5) {
+                  syncedIds.add(x.entry.payload.id);
+                  failedIds.delete(x.entry.payload.id);
+                }
+              });
+            } else {
+              // Outros erros (RLS, rede, etc): retry individual com backoff
+              for (const item of chunk) {
+                try {
+                  const singlePromise = (supabase as any).from(table as any).insert(item.row);
+                  const { error: singleError } = await this.withTimeout(singlePromise, 8000, `retry single ${table}`) as any;
+                  if (!singleError || singleError.code === '23505') {
+                    syncedIds.add(item.entry.payload.id);
+                  } else {
+                    console.error(`Retry individual falhou ${item.entry.payload.id}:`, describeSyncError(singleError));
+                    const attempts = ((item.entry as any)._attempts || 0) + 1;
+                    (item.entry as any)._attempts = attempts;
+                    if (attempts >= 5) {
+                      console.warn(`Descartando após 5 tentativas: ${item.entry.payload.id}`);
+                      syncedIds.add(item.entry.payload.id);
+                    } else {
+                      failedIds.add(item.entry.payload.id);
+                    }
+                  }
+                } catch (e) {
+                  console.warn(`Timeout no retry individual ${item.entry.payload.id}`, e);
+                  const attempts = ((item.entry as any)._attempts || 0) + 1;
+                  (item.entry as any)._attempts = attempts;
+                  if (attempts < 5) failedIds.add(item.entry.payload.id);
+                  else syncedIds.add(item.entry.payload.id);
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`Erro/timeout no chunk ${table}:`, e);
+            allSuccess = false;
+            chunk.forEach(x => {
+              const attempts = ((x.entry as any)._attempts || 0) + 1;
+              (x.entry as any)._attempts = attempts;
+              if (attempts < 5) failedIds.add(x.entry.payload.id);
+              else syncedIds.add(x.entry.payload.id);
+            });
           }
-        } else {
-          // Entire batch succeeded
-          items.forEach(x => syncedIds.add(x.entry.payload.id));
         }
       }
 
-      // Filter out successfully synced items from queue
-      const remainingQueue = queue.filter(x => x.payload && !syncedIds.has(x.payload.id));
-      localStorage.setItem(KEY_SYNC_QUEUE, JSON.stringify(remainingQueue));
+      // Rebuild queue: keep unprocessed slice + failed entries (with updated attempts) - synced
+      const stillPending = queueSlice.filter(x => x.payload && !syncedIds.has(x.payload.id));
+      const nextQueue = [...stillPending, ...remainingUnprocessed];
+      localStorage.setItem(KEY_SYNC_QUEUE, JSON.stringify(nextQueue));
 
-      return allSuccess || remainingQueue.length === 0;
+      // Background retry if still has items and failures were transient (network)
+      if (nextQueue.length > 0 && nextQueue.length < queue.length) {
+        // Some progress made; schedule next cycle shortly
+        setTimeout(() => { LocalDb.processSyncQueue().catch(() => {}); }, 2500);
+      }
+
+      return allSuccess || nextQueue.length === 0;
     } catch (err) {
       console.error('Erro catastrófico no processSyncQueue:', err);
       return false;
@@ -643,14 +743,25 @@ export async function fetchChecklistRecordsFromSupabase(): Promise<ChecklistReco
   if (!isSupabaseConfigured || !supabase) {
     return [];
   }
-  const { data, error } = await supabase
-    .from('registros_checklist')
-    .select('*');
+  try {
+    const query = supabase.from('registros_checklist').select('*').limit(500);
+    const { data, error } = await withFetchTimeout(query as any, 8000) as any;
+    if (error) {
+      console.error('SUPABASE ERROR:', error);
+      return [];
+    }
+    return (data || []) as ChecklistRecord[];
+  } catch (e) {
+    console.error('Erro ao buscar registros_checklist:', e);
+    return [];
+  }
+}
 
-  console.log('SUPABASE DATA:', data);
-  console.log('SUPABASE ERROR:', error);
-
-  return (data || []) as ChecklistRecord[];
+async function withFetchTimeout<T>(promise: Promise<T>, ms = 10000): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('fetch timeout')), ms))
+  ]) as Promise<T>;
 }
 
 export async function fetchPreventiveChecklistsFromSupabase(): Promise<PreventiveChecklistSubmission[]> {
@@ -658,11 +769,13 @@ export async function fetchPreventiveChecklistsFromSupabase(): Promise<Preventiv
     return [];
   }
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from('checklist_preventivo')
       .select('*')
       .order('data', { ascending: false })
-      .order('hora', { ascending: false });
+      .order('hora', { ascending: false })
+      .limit(500);
+    const { data, error } = await withFetchTimeout(query as any, 10000) as any;
 
     if (error) {
       console.error('Erro ao carregar checklists preventivos do Supabase:', error);
@@ -684,11 +797,13 @@ export async function fetchHistoricoInspecoesFromSupabase(): Promise<HistoricoIn
     return [];
   }
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from('historico_inspecoes')
       .select('*')
       .order('data', { ascending: false })
-      .order('hora', { ascending: false });
+      .order('hora', { ascending: false })
+      .limit(500);
+    const { data, error } = await withFetchTimeout(query as any, 10000) as any;
 
     if (error) {
       console.error('Erro ao buscar historico_inspecoes:', error);
@@ -710,11 +825,13 @@ export async function fetchBatteryRechargesFromSupabase(): Promise<BatteryRechar
     return [];
   }
   try {
-    const { data, error } = await supabase
+    const query = supabase
       .from('abastecimento_recarga_bateria')
       .select('*')
       .order('data', { ascending: false })
-      .order('hora_termino', { ascending: false });
+      .order('hora_termino', { ascending: false })
+      .limit(500);
+    const { data, error } = await withFetchTimeout(query as any, 10000) as any;
 
     if (error) {
       console.error('Erro ao buscar abastecimento_recarga_bateria:', error);

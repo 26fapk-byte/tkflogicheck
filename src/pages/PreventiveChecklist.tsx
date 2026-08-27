@@ -3,7 +3,7 @@ import { AlertTriangle, Battery, ClipboardCheck, Gauge, Truck, Camera, X } from 
 import { LocalDb, CHECKLIST_ITEMS, generateUUID } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
 import { useAuth } from '../context/AuthContext';
-import { uploadFotoNok } from '../lib/supabaseStorage';
+import { uploadFotosNokParalelo } from '../lib/supabaseStorage';
 import { PreventiveChecklistSubmission, Equipment } from '../types';
 import StatusToggle from '../components/StatusToggle';
 import SignatureField from '../components/SignatureField';
@@ -47,13 +47,12 @@ export default function PreventiveChecklist() {
     const pending = CHECKLIST_ITEMS.find((item) => itemsState[item.key].status === 'NOK' && !itemsState[item.key].observacao.trim());
     if (pending) return showToast(`Descreva o item NOK: ${pending.label}.`, 'error');
 
-    // Upload das fotos de itens NOK (opcional, best-effort)
-    const fotosUrls: Record<string, string | null> = {};
-    for (const item of CHECKLIST_ITEMS) {
-      if (itemsState[item.key].status === 'NOK' && itemsFotos[item.key]) {
-        fotosUrls[item.key] = await uploadFotoNok(itemsFotos[item.key]!, 'preventivo');
-      }
-    }
+    const fotosToUpload = CHECKLIST_ITEMS
+      .filter(item => itemsState[item.key].status === 'NOK' && itemsFotos[item.key])
+      .map(item => ({ key: item.key, file: itemsFotos[item.key]! }));
+    const fotosUrls: Record<string, string | null> = fotosToUpload.length
+      ? await uploadFotosNokParalelo(fotosToUpload, 'preventivo', 3)
+      : {};
 
     const selectedEq = equipments.find((eq) => eq.patrimonio === equipment);
     const now = new Date();

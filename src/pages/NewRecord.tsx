@@ -3,7 +3,7 @@ import { LocalDb, CHECKLIST_ITEMS, generateUUID } from '../lib/db';
 import { useEquipments } from '../hooks/useEquipments';
 import { ChecklistRecord, HistoricoInspecao } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { uploadFotoNok } from '../lib/supabaseStorage';
+import { uploadFotosNokParalelo } from '../lib/supabaseStorage';
 import {
   CheckCircle2,
   Save,
@@ -162,13 +162,13 @@ export default function NewRecord() {
         ? `${selectedEquipmentMeta.nome} (${selectedEquipmentMeta.patrimonio})`
         : equipment;
 
-      // Upload das fotos de itens NOK (opcional, best-effort)
-      const fotosUrls: Record<string, string | null> = {};
-      for (const item of CHECKLIST_ITEMS) {
-        if (itemsStatus[item.key] === 'NOK' && itemsFotos[item.key]) {
-          fotosUrls[item.key] = await uploadFotoNok(itemsFotos[item.key]!, 'inspecao');
-        }
-      }
+      // Upload das fotos de itens NOK em paralelo (best-effort, não bloqueia salvamento)
+      const fotosToUpload = CHECKLIST_ITEMS
+        .filter(item => itemsStatus[item.key] === 'NOK' && itemsFotos[item.key])
+        .map(item => ({ key: item.key, file: itemsFotos[item.key]! }));
+      const fotosUrls: Record<string, string | null> = fotosToUpload.length
+        ? await uploadFotosNokParalelo(fotosToUpload, 'inspecao', 3)
+        : {};
 
       const newRecordsToAdd: ChecklistRecord[] = [];
       const timestamp = new Date().toISOString();
@@ -209,7 +209,8 @@ export default function NewRecord() {
         });
       }
 
-      const synced = await LocalDb.saveRecords(newRecordsToAdd);
+      // Salvamento local imediato (optimistic) - não aguarda rede
+      await LocalDb.saveRecords(newRecordsToAdd);
 
       // Save unified inspection to the new historico_inspecoes table
       const statusGeral = CHECKLIST_ITEMS.some(item => itemsStatus[item.key] === 'NOK') ? 'NOK' : 'OK';
@@ -242,11 +243,12 @@ export default function NewRecord() {
         navigator.vibrate([100, 50, 100]);
       }
 
+      const pending = LocalDb.getSyncQueueLength();
       showToast(
-        synced
-          ? 'Checklist de Empilhadeira registrado com sucesso!'
-          : 'Registro salvo neste dispositivo. A sincronização com o banco está pendente.',
-        synced ? 'success' : 'error'
+        pending === 0
+          ? 'Checklist de Empilhadeira registrado e sincronizado com sucesso!'
+          : 'Checklist salvo localmente! Sincronização em andamento (disponível em histórico quando concluir).',
+        'success'
       );
 
       setEquipment('');
@@ -281,8 +283,8 @@ export default function NewRecord() {
       {toast.visible && (
         <div
           className={`tkf-toast flex items-center justify-center gap-3 ${toast.type === 'success'
-              ? 'border-emerald-500 bg-[#0e131f] text-emerald-300'
-              : 'border-red-500 bg-[#0e131f] text-red-300'
+            ? 'border-emerald-500 bg-[#0e131f] text-emerald-300'
+            : 'border-red-500 bg-[#0e131f] text-red-300'
             }`}
         >
           {toast.type === 'success' ? (
@@ -409,8 +411,8 @@ export default function NewRecord() {
                   type="button"
                   onClick={() => setBateriaBarras(b)}
                   className={`h-11 rounded-lg font-bold text-xs border transition-all cursor-pointer flex flex-col items-center justify-center ${bateriaBarras === b
-                      ? 'bg-[#4364f7] text-white border-[#4364f7]'
-                      : 'bg-[#131a2c] border-white/10 text-slate-300 hover:bg-slate-800'
+                    ? 'bg-[#4364f7] text-white border-[#4364f7]'
+                    : 'bg-[#131a2c] border-white/10 text-slate-300 hover:bg-slate-800'
                     }`}
                 >
                   <span>{b}</span>

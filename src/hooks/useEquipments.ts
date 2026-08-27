@@ -8,9 +8,14 @@ export function useEquipments() {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    const list = await fetchEquipments();
-    setEquipments(list);
-    setLoading(false);
+    try {
+      const list = await fetchEquipments();
+      setEquipments(list);
+    } catch {
+      // silent - fetchEquipments already returns [] on error
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {

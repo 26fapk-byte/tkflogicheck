@@ -1,20 +1,50 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || '';
+const rawSupabaseUrl = ((import.meta as any).env.VITE_SUPABASE_URL || '').trim();
+const rawSupabaseAnonKey = ((import.meta as any).env.VITE_SUPABASE_ANON_KEY || '').trim();
+const supabaseUrl = rawSupabaseUrl.replace(/\/$/, '');
+const supabaseAnonKey = rawSupabaseAnonKey;
 
 // True if Supabase is properly configured with custom, non-default credentials
+// Also detects common misconfig placeholder like sua_chave_anon_aqui
 export const isSupabaseConfigured = !!(
-  supabaseUrl && 
-  supabaseAnonKey && 
+  supabaseUrl &&
+  supabaseAnonKey &&
   !supabaseUrl.includes('your_project') &&
-  supabaseUrl !== 'https://your_project.supabase.co'
+  supabaseUrl !== 'https://your_project.supabase.co' &&
+  supabaseAnonKey !== 'sua_chave_anon_aqui' &&
+  !supabaseAnonKey.includes('sua_chave') &&
+  supabaseAnonKey.length > 20 &&
+  /^https:\/\/.+\.supabase\.co$/.test(supabaseUrl)
 );
+
+export const supabaseConfigError = !isSupabaseConfigured
+  ? (!supabaseUrl || !supabaseAnonKey
+      ? 'Variáveis VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY não definidas.'
+      : supabaseAnonKey === 'sua_chave_anon_aqui' || supabaseAnonKey.includes('sua_chave')
+        ? 'VITE_SUPABASE_ANON_KEY ainda está com placeholder "sua_chave_anon_aqui". Configure a chave real do Supabase.'
+        : !/^https:\/\/.+\.supabase\.co$/.test(supabaseUrl)
+          ? `VITE_SUPABASE_URL inválida: "${supabaseUrl}". Deve ser https://<projeto>.supabase.co`
+          : 'Supabase não configurado.')
+  : null;
 
 // Graceful fallback helper if Supabase is partially setup or default is active
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce'
+      },
+      db: { schema: 'public' },
+      global: { fetch: fetch.bind(globalThis) }
+    })
   : null;
+
+if (!isSupabaseConfigured && typeof window !== 'undefined') {
+  console.warn('[Supabase] Não configurado:', supabaseConfigError);
+}
 
 // Expose connection globally on window for external buttons/console access
 if (typeof window !== 'undefined' && supabase) {

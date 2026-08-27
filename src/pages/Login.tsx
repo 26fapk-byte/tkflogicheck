@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../context/AuthContext';
+import { isSupabaseConfigured, supabaseConfigError } from '../lib/supabase';
 import {
   Lock,
   Mail,
@@ -33,9 +34,12 @@ export default function Login() {
 
   const onSubmit = async (data: any) => {
     setReqError(null);
+    setForgotStatus(null);
     setSubmitting(true);
     try {
-      const res = await login(data.email, data.password);
+      const email = String(data.email || '').trim();
+      const password = String(data.password || '');
+      const res = await login(email, password);
       if (!res.success) {
         setReqError(res.error || 'Falha na autenticação corporativa.');
       }
@@ -91,6 +95,12 @@ export default function Login() {
 
           <div className="rounded-3xl border border-white/20 bg-[#0f172a]/90 p-6 shadow-[0_20px_40px_rgba(15,23,42,0.35)]">
             <p className="mb-6 text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Acesso Operacional</p>
+            {!isSupabaseConfigured && (
+              <div className="mb-5 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Supabase não configurado: {supabaseConfigError} — login indisponível até corrigir variáveis no ambiente (Vercel/env).</span>
+              </div>
+            )}
             {reqError && (
               <div className="mb-5 flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-200">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
