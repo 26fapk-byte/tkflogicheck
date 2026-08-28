@@ -332,6 +332,8 @@ export class LocalDb {
           const rec = entry.payload as ChecklistRecord;
           const hasValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rec.id);
           const formattedHour = rec.hora && rec.hora.split(':').length === 2 ? rec.hora + ':00' : rec.hora;
+          // Normaliza status para CHECK constraint ('OK'/'NOK' maiúsculo) - evita 23514 e "1 pendente"
+          const normalizedStatus = String(rec.status || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK';
           row = {
             id: hasValidUuid ? rec.id : generateUUID(),
             created_at: rec.created_at,
@@ -340,7 +342,7 @@ export class LocalDb {
             operador: rec.operador,
             equipamento: rec.equipamento,
             item: rec.item,
-            status: rec.status,
+            status: normalizedStatus,
             observacao: rec.observacao,
             patrimonio: rec.patrimonio || '',
             horimetro: rec.horimetro !== undefined ? rec.horimetro : null,
@@ -357,9 +359,20 @@ export class LocalDb {
           row = entry.payload as BatteryRechargeRecord;
         } else if (entry.table === 'historico_inspecoes') {
           const rec = entry.payload as HistoricoInspecao;
+          // Normaliza status_geral e itens.status para CHECK ('OK'/'NOK') - corrige inserts pendentes
+          const normalizedStatusGeral = String((rec as any).status_geral || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK';
+          const normalizedItens = Array.isArray((rec as any).itens) ? (rec as any).itens.map((it: any) => ({
+            ...it,
+            status: String(it.status || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK'
+          })) : (rec as any).itens;
+          // Normaliza hora para HH:MM:SS (evita erro de formato time)
+          const rawHora = (rec as any).hora;
+          const normalizedHora = rawHora && String(rawHora).split(':').length === 2 ? String(rawHora) + ':00' : rawHora;
           row = {
             ...rec,
-            itens: JSON.stringify(rec.itens)
+            hora: normalizedHora,
+            status_geral: normalizedStatusGeral,
+            itens: JSON.stringify(normalizedItens)
           };
         }
 
