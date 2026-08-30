@@ -3,6 +3,29 @@
 -- SCRIPT DE CONFIGURAÇÃO DE BANCO DE DADOS (SUPABASE SQL)
 -- ==========================================
 
+-- 0. Limpeza idempotente de policies (permite reexecutar este script com
+-- segurança em bancos existentes, removendo policies legadas/permissivas).
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT policyname, tablename
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename IN (
+        'registros_checklist',
+        'checklist_preventivo',
+        'abastecimento_recarga_bateria',
+        'equipamentos',
+        'perfis_usuarios',
+        'historico_inspecoes',
+        'baterias'
+      )
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename);
+  END LOOP;
+END $$;
+
 -- 1. Criação da tabela registros_checklist
 CREATE TABLE IF NOT EXISTS public.registros_checklist (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -55,7 +78,18 @@ ALTER TABLE public.registros_checklist
     ALTER COLUMN sinais_luminosos SET DEFAULT '',
     ALTER COLUMN limpeza SET DEFAULT '';
 
--- Permite deleção/reparação apenas por administradores ou gerentes se for desejado (Opcional - por padrão bloqueado)
+-- Permite deleção/reparação apenas por gerentes e master
+CREATE POLICY "Permite delecao para gerentes e master"
+ON public.registros_checklist
+FOR DELETE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.perfis_usuarios
+    WHERE perfis_usuarios.id = auth.uid()
+    AND perfis_usuarios.nivel_acesso IN ('gerente', 'master')
+  )
+);
 
 -- 4. Criação de índices para otimização de buscas operacionais no BI e Power BI
 CREATE INDEX IF NOT EXISTS idx_checklist_data_equipamento ON public.registros_checklist (data, equipamento);
@@ -162,7 +196,49 @@ WITH CHECK (true);
 CREATE INDEX IF NOT EXISTS idx_equipamentos_patrimonio ON public.equipamentos (patrimonio);
 CREATE INDEX IF NOT EXISTS idx_equipamentos_ativo ON public.equipamentos (ativo);
 
--- 8. Tabela de Histórico Unificado de Inspeções (Checklist Padrão)
+-- 8. Tabela de Perfis de Usuários (RBAC)
+-- Base do controle de acesso (operador/gerente/master). As policies de
+-- DELETE de registros_checklist e historico_inspecoes dependem desta tabela.
+CREATE TABLE IF NOT EXISTS public.perfis_usuarios (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    nome VARCHAR(255) DEFAULT '',
+    nivel_acesso VARCHAR(20) DEFAULT 'operador' NOT NULL CHECK (nivel_acesso IN ('operador', 'gerente', 'master')),
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.perfis_usuarios ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "perfis_usuarios_select_auth"
+ON public.perfis_usuarios
+FOR SELECT TO authenticated
+USING (true);
+
+CREATE POLICY "perfis_usuarios_insert_auth"
+ON public.perfis_usuarios
+FOR INSERT TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "perfis_usuarios_update_auth"
+ON public.perfis_usuarios
+FOR UPDATE TO authenticated
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "perfis_usuarios_delete_master"
+ON public.perfis_usuarios
+FOR DELETE TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.perfis_usuarios
+    WHERE perfis_usuarios.id = auth.uid()
+    AND perfis_usuarios.nivel_acesso = 'master'
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_perfis_email ON public.perfis_usuarios (email);
+
+-- 9. Tabela de Histórico Unificado de Inspeções (Checklist Padrão)
 CREATE TABLE IF NOT EXISTS public.historico_inspecoes (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
@@ -197,7 +273,10 @@ ON public.historico_inspecoes FOR DELETE TO authenticated USING (
   )
 );
 
--- 9. Tabela de Baterias (frota de baterias intercambiáveis)
+-- índice para as consultas por período/patrimônio no Dashboard e no Histórico
+CREATE INDEX IF NOT EXISTS idx_historico_inspecoes_data ON public.historico_inspecoes (data, patrimonio);
+
+-- 10. Tabela de Baterias (frota de baterias intercambiáveis)
 CREATE TABLE IF NOT EXISTS public.baterias (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
@@ -232,7 +311,7 @@ ALTER TABLE public.abastecimento_recarga_bateria
 
 CREATE INDEX IF NOT EXISTS idx_abastecimento_bateria ON public.abastecimento_recarga_bateria (bateria_id);
 
--- 10. Instruções Adicionais de Conectividade
+-- 11. Instruções Adicionais de Conectividade
 -- Cole as seguintes variáveis no painel de segredos do Vercel ou no arquivo .env local:
 -- VITE_SUPABASE_URL=Sua_URL_do_Projeto_Supabase
 -- VITE_SUPABASE_ANON_KEY=Sua_Chave_Anonima_do_Projeto_Supabase
