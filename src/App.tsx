@@ -1,8 +1,8 @@
 import React, { useState, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navigation from './components/Navigation';
-import Login from './pages/Login';
 
+const Login = lazy(() => import('./pages/Login'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const NewRecord = lazy(() => import('./pages/NewRecord'));
 const PreventiveChecklist = lazy(() => import('./pages/PreventiveChecklist'));
@@ -34,18 +34,22 @@ function AppContent() {
     );
   }
 
-  // Not authenticated? Render secure sign-in page
-  if (!user) {
-    return <Login />;
-  }
-
-  // Render main screen according to active tab coordinates
   const pageFallback = (
     <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f8fafc]">
       <div className="w-10 h-10 border-4 border-[#1e3a8a] border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
+  // Not authenticated? Render secure sign-in page
+  if (!user) {
+    return (
+      <Suspense fallback={pageFallback}>
+        <Login />
+      </Suspense>
+    );
+  }
+
+  // Render main screen according to active tab coordinates
   return (
     <Navigation currentTab={tab} setTab={setTab}>
       <Suspense fallback={pageFallback}>

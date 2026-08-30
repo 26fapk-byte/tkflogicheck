@@ -24,12 +24,13 @@ export default defineConfig(() => {
         output: {
           manualChunks: {
             'vendor-supabase': ['@supabase/supabase-js'],
-            'vendor-charts': ['recharts'],
-            'vendor-excel': ['papaparse'],
-            'vendor-motion': ['framer-motion'],
+            'vendor-forms': ['react-hook-form'],
           },
         },
       },
+    },
+    esbuild: {
+      drop: ['console', 'debugger'] as ('console' | 'debugger')[],
     },
   };
 });
