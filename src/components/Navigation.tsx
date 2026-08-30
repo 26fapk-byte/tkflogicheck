@@ -28,6 +28,7 @@ interface NavigationProps {
 export default function Navigation({ currentTab, setTab, children }: NavigationProps) {
   const { user, logout } = useAuth();
   const [syncCount, setSyncCount] = useState(0);
+  const [deadCount, setDeadCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
@@ -39,6 +40,7 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
   useEffect(() => {
     const updateSyncStatus = () => {
       setSyncCount(LocalDb.getSyncQueueLength());
+      setDeadCount(LocalDb.getDeadLetterCount());
     };
 
     updateSyncStatus();
@@ -84,6 +86,20 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
     setSyncing(true);
     await LocalDb.processSyncQueue();
     setSyncCount(LocalDb.getSyncQueueLength());
+    setDeadCount(LocalDb.getDeadLetterCount());
+    setSyncing(false);
+  };
+
+  const handleRetryDead = async () => {
+    setSyncing(true);
+    const restored = LocalDb.retryDeadLetter();
+    if (restored > 0) {
+      showToast(`${restored} registro(s) voltaram à fila de envio.`, 'success');
+    } else {
+      showToast('Nenhum registro em erro para reenviar.', 'error');
+    }
+    setSyncCount(LocalDb.getSyncQueueLength());
+    setDeadCount(LocalDb.getDeadLetterCount());
     setSyncing(false);
   };
 
@@ -110,6 +126,18 @@ export default function Navigation({ currentTab, setTab, children }: NavigationP
               >
                 <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
                 <span>{syncCount} pendentes</span>
+              </button>
+            )}
+
+            {deadCount > 0 && (
+              <button
+                onClick={handleRetryDead}
+                disabled={syncing}
+                title="Registros que falharam ao sincronizar - toque para reenviar (os dados estão salvos no aparelho)"
+                className="flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
+                <span>{deadCount} em erro</span>
               </button>
             )}
 

@@ -12,6 +12,9 @@ export interface ChecklistRecord {
   horimetro?: number; // Hours record
   ligando?: 'OK' | 'NOK'; // Start connection test
   bateria_barras?: number; // 1 to 5 level indicator
+  vazamentos?: string;
+  sinais_luminosos?: string;
+  limpeza?: string;
 }
 
 export interface PreventiveChecklistItemResult {

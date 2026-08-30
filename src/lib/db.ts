@@ -26,6 +26,39 @@ export function generateUUID(): string {
   });
 }
 
+// Normalizadores para resgatar pendências gravadas por versões antigas do app.
+// Colunas que hoje são NOT NULL no banco podem estar ausentes no localStorage.
+function normalizeDate(d: unknown): string | undefined {
+  if (d === undefined || d === null) return undefined;
+  const s = String(d).trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  return undefined;
+}
+
+function normalizeHora(h: unknown): string | undefined {
+  if (h === undefined || h === null) return undefined;
+  const s = String(h).trim();
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(s)) {
+    const [hh, mm, ss] = s.split(':');
+    return `${hh.padStart(2, '0')}:${mm}:${ss}`;
+  }
+  const m = s.match(/^(\d{1,2}):(\d{2})/);
+  if (m) return `${m[1].padStart(2, '0')}:${m[2]}:00`;
+  return undefined;
+}
+
+function toNum(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeOkNok(status: unknown): 'OK' | 'NOK' {
+  return String(status || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK';
+}
+
 // The 17 operational checkpoint attributes from official PDF form.
 export const CHECKLIST_ITEMS: ChecklistItemMeta[] = [
   { key: 'nivel_bateria', label: 'Nível da Bateria', categoria: 'Eletrico' },
@@ -58,6 +91,7 @@ const KEY_SYNC_QUEUE = `${STORE_PREFIX}sync_queue`;
 const KEY_PREVENTIVE_CHECKLISTS = `${STORE_PREFIX}preventive_checklists`;
 const KEY_BATTERY_RECHARGES = `${STORE_PREFIX}battery_recharges`;
 const KEY_HISTORICO_INSPECOES = `${STORE_PREFIX}historico_inspecoes`;
+const KEY_SYNC_DEAD = `${STORE_PREFIX}sync_dead`;
 
 type EquipmentRow = {
   id: string;
@@ -314,6 +348,7 @@ export class LocalDb {
 
       const syncedIds = new Set<string>();
       const failedIds = new Set<string>();
+      const deadIds = new Set<string>();
       const entriesByTable: Record<string, { entry: SyncQueueEntry & { _attempts?: number }; row: any }[]> = {};
 
       const processedQueueKeys = new Set<string>();
@@ -331,48 +366,81 @@ export class LocalDb {
         if (entry.table === 'registros_checklist') {
           const rec = entry.payload as ChecklistRecord;
           const hasValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rec.id);
-          const formattedHour = rec.hora && rec.hora.split(':').length === 2 ? rec.hora + ':00' : rec.hora;
-          // Normaliza status para CHECK constraint ('OK'/'NOK' maiúsculo) - evita 23514 e "1 pendente"
-          const normalizedStatus = String(rec.status || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK';
           row = {
             id: hasValidUuid ? rec.id : generateUUID(),
             created_at: rec.created_at,
-            data: rec.data,
-            hora: formattedHour,
+            data: normalizeDate(rec.data) || String(rec.data || ''),
+            hora: normalizeHora(rec.hora) || '00:00:00',
             operador: rec.operador,
             equipamento: rec.equipamento,
-            item: rec.item,
-            status: normalizedStatus,
-            observacao: rec.observacao,
+            item: rec.item || 'Geral',
+            status: normalizeOkNok(rec.status),
+            observacao: rec.observacao || '',
             patrimonio: rec.patrimonio || '',
-            horimetro: rec.horimetro !== undefined ? rec.horimetro : null,
-            ligando: rec.ligando || null,
-            bateria_barras: rec.bateria_barras !== undefined ? rec.bateria_barras : null
+            horimetro: toNum(rec.horimetro),
+            ligando: rec.ligando ? String(rec.ligando).slice(0, 10) : null,
+            bateria_barras: toNum(rec.bateria_barras),
+            vazamentos: rec.vazamentos || '',
+            sinais_luminosos: rec.sinais_luminosos || '',
+            limpeza: rec.limpeza || ''
           };
         } else if (entry.table === 'checklist_preventivo') {
           const rec = entry.payload as PreventiveChecklistSubmission;
+          const itens = Array.isArray(rec.itens)
+            ? rec.itens.map((it: any) => ({ ...it, status: normalizeOkNok(it.status) }))
+            : [];
           row = {
-            ...rec,
-            itens: JSON.stringify(rec.itens)
+            created_at: rec.created_at,
+            data: normalizeDate(rec.data) || String(rec.data || ''),
+            hora: normalizeHora(rec.hora) || '00:00:00',
+            operador: rec.operador,
+            equipamento: rec.equipamento,
+            patrimonio: rec.patrimonio || '',
+            horimetro: toNum(rec.horimetro) ?? 0,
+            bateria_barras: toNum(rec.bateria_barras) ?? 0,
+            observacoes_gerais: rec.observacoes_gerais || '',
+            assinatura_nome: rec.assinatura_nome || '',
+            assinatura_confirmada: !!rec.assinatura_confirmada,
+            status_geral: normalizeOkNok((rec as any).status_geral),
+            itens: JSON.stringify(itens)
           };
         } else if (entry.table === 'abastecimento_recarga_bateria') {
-          row = entry.payload as BatteryRechargeRecord;
+          const rec = entry.payload as BatteryRechargeRecord;
+          row = {
+            created_at: rec.created_at,
+            data: normalizeDate(rec.data) || String(rec.data || ''),
+            patrimonio: rec.patrimonio || '',
+            horimetro: toNum(rec.horimetro) ?? 0,
+            operador_inicio: rec.operador_inicio,
+            operador_termino: rec.operador_termino,
+            hora_inicio: normalizeHora(rec.hora_inicio) || '00:00:00',
+            hora_termino: normalizeHora(rec.hora_termino) || '00:00:00',
+            carregador_status: normalizeOkNok(rec.carregador_status),
+            reposicao_agua: !!rec.reposicao_agua,
+            responsavel_reposicao: rec.responsavel_reposicao || '',
+            observacoes: rec.observacoes || '',
+            assinatura_nome: rec.assinatura_nome || '',
+            assinatura_confirmada: !!rec.assinatura_confirmada
+          };
         } else if (entry.table === 'historico_inspecoes') {
           const rec = entry.payload as HistoricoInspecao;
-          // Normaliza status_geral e itens.status para CHECK ('OK'/'NOK') - corrige inserts pendentes
-          const normalizedStatusGeral = String((rec as any).status_geral || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK';
           const normalizedItens = Array.isArray((rec as any).itens) ? (rec as any).itens.map((it: any) => ({
             ...it,
-            status: String(it.status || 'OK').trim().toUpperCase() === 'NOK' ? 'NOK' : 'OK'
-          })) : (rec as any).itens;
-          // Normaliza hora para HH:MM:SS (evita erro de formato time)
-          const rawHora = (rec as any).hora;
-          const normalizedHora = rawHora && String(rawHora).split(':').length === 2 ? String(rawHora) + ':00' : rawHora;
+            status: normalizeOkNok(it.status)
+          })) : [];
           row = {
-            ...rec,
-            hora: normalizedHora,
-            status_geral: normalizedStatusGeral,
-            itens: JSON.stringify(normalizedItens)
+            created_at: rec.created_at,
+            data: normalizeDate(rec.data) || String(rec.data || ''),
+            hora: normalizeHora((rec as any).hora) || '00:00:00',
+            operador: rec.operador,
+            equipamento: rec.equipamento,
+            patrimonio: rec.patrimonio || '',
+            horimetro: toNum(rec.horimetro) ?? 0,
+            ligando: rec.ligando ? String(rec.ligando).slice(0, 10) : 'OK',
+            bateria_barras: toNum(rec.bateria_barras) ?? 0,
+            status_geral: normalizeOkNok((rec as any).status_geral),
+            itens: JSON.stringify(normalizedItens),
+            observacao_geral: (rec as any).observacao_geral || ''
           };
         }
 
@@ -425,8 +493,9 @@ export class LocalDb {
                     const attempts = ((item.entry as any)._attempts || 0) + 1;
                     (item.entry as any)._attempts = attempts;
                     if (attempts >= 5) {
-                      console.warn(`Descartando item ${item.entry.payload.id} após ${attempts} falhas (dead-letter).`);
-                      syncedIds.add(item.entry.payload.id);
+                      console.warn(`Movendo item ${item.entry.payload.id} para a fila de erros após ${attempts} falhas.`);
+                      deadIds.add(item.entry.payload.id);
+                      this.addDeadLetter(item.entry, singleError);
                     } else {
                       failedIds.add(item.entry.payload.id);
                     }
@@ -436,7 +505,10 @@ export class LocalDb {
                   const attempts = ((item.entry as any)._attempts || 0) + 1;
                   (item.entry as any)._attempts = attempts;
                   if (attempts < 5) failedIds.add(item.entry.payload.id);
-                  else syncedIds.add(item.entry.payload.id);
+                  else {
+                    deadIds.add(item.entry.payload.id);
+                    this.addDeadLetter(item.entry, e);
+                  }
                 }
               }
             } else if (error.code === 'PGRST204' || error.code === '42703' || /column.*does not exist/i.test(error.message || '')) {
@@ -448,8 +520,9 @@ export class LocalDb {
                 const attempts = ((x.entry as any)._attempts || 0) + 1;
                 (x.entry as any)._attempts = attempts;
                 if (attempts >= 5) {
-                  syncedIds.add(x.entry.payload.id);
+                  deadIds.add(x.entry.payload.id);
                   failedIds.delete(x.entry.payload.id);
+                  this.addDeadLetter(x.entry, error);
                 }
               });
             } else {
@@ -465,8 +538,9 @@ export class LocalDb {
                     const attempts = ((item.entry as any)._attempts || 0) + 1;
                     (item.entry as any)._attempts = attempts;
                     if (attempts >= 5) {
-                      console.warn(`Descartando após 5 tentativas: ${item.entry.payload.id}`);
-                      syncedIds.add(item.entry.payload.id);
+                      console.warn(`Movendo item ${item.entry.payload.id} para a fila de erros após ${attempts} falhas.`);
+                      deadIds.add(item.entry.payload.id);
+                      this.addDeadLetter(item.entry, singleError);
                     } else {
                       failedIds.add(item.entry.payload.id);
                     }
@@ -476,7 +550,10 @@ export class LocalDb {
                   const attempts = ((item.entry as any)._attempts || 0) + 1;
                   (item.entry as any)._attempts = attempts;
                   if (attempts < 5) failedIds.add(item.entry.payload.id);
-                  else syncedIds.add(item.entry.payload.id);
+                  else {
+                    deadIds.add(item.entry.payload.id);
+                    this.addDeadLetter(item.entry, e);
+                  }
                 }
               }
             }
@@ -487,14 +564,17 @@ export class LocalDb {
               const attempts = ((x.entry as any)._attempts || 0) + 1;
               (x.entry as any)._attempts = attempts;
               if (attempts < 5) failedIds.add(x.entry.payload.id);
-              else syncedIds.add(x.entry.payload.id);
+              else {
+                deadIds.add(x.entry.payload.id);
+                this.addDeadLetter(x.entry, e);
+              }
             });
           }
         }
       }
 
       // Rebuild queue: keep unprocessed slice + failed entries (with updated attempts) - synced
-      const stillPending = queueSlice.filter(x => x.payload && !syncedIds.has(x.payload.id));
+      const stillPending = queueSlice.filter(x => x.payload && !syncedIds.has(x.payload.id) && !deadIds.has(x.payload.id));
       const nextQueue = [...stillPending, ...remainingUnprocessed];
       localStorage.setItem(KEY_SYNC_QUEUE, JSON.stringify(nextQueue));
 
@@ -519,6 +599,49 @@ export class LocalDb {
     } catch {
       return 0;
     }
+  }
+
+  static getDeadLetterCount(): number {
+    try {
+      const raw = localStorage.getItem(KEY_SYNC_DEAD);
+      const dead = raw ? JSON.parse(raw) : [];
+      return Array.isArray(dead) ? dead.length : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  // Recoloca itens com erro na fila ativa para nova tentativa (dados preservados).
+  static retryDeadLetter(): number {
+    try {
+      const raw = localStorage.getItem(KEY_SYNC_DEAD);
+      const dead: any[] = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(dead) || dead.length === 0) return 0;
+      localStorage.setItem(KEY_SYNC_DEAD, JSON.stringify([]));
+      const queueRaw = localStorage.getItem(KEY_SYNC_QUEUE);
+      const queue = queueRaw ? JSON.parse(queueRaw) : [];
+      const restored = dead.map((d) => ({ table: d.table, payload: d.payload, _attempts: 0 }));
+      localStorage.setItem(KEY_SYNC_QUEUE, JSON.stringify([...queue, ...restored]));
+      this.processSyncQueue().catch(() => {});
+      return restored.length;
+    } catch {
+      return 0;
+    }
+  }
+
+  private static addDeadLetter(entry: any, error: any): void {
+    try {
+      const raw = localStorage.getItem(KEY_SYNC_DEAD);
+      const dead: any[] = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(dead)) return;
+      dead.push({
+        table: entry.table,
+        payload: entry.payload,
+        movedAt: new Date().toISOString(),
+        error: { code: error?.code, message: error?.message || String(error) }
+      });
+      localStorage.setItem(KEY_SYNC_DEAD, JSON.stringify(dead.slice(-200)));
+    } catch { }
   }
 
   static deleteRecord(id: string): boolean {
